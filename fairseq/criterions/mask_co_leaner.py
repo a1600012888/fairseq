@@ -198,7 +198,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
         #import IPython
         #IPython.embed()
-        print(pred_softmax.shape, targets.shape)
+        #print(pred_softmax.shape, targets.shape)
         target_score = torch.gather(pred_softmax, dim=-1, index=target_index)
         target_score = target_score.view(-1)
 
