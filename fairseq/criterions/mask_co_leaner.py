@@ -13,14 +13,14 @@ from fairseq import metrics, utils
 from fairseq.criterions import FairseqCriterion, register_criterion
 
 
-@register_criterion('mask_leaner')
-class MaskLeanerLoss(FairseqCriterion):
+@register_criterion('mask_co_leaner')
+class MaskLeanerCoLoss(FairseqCriterion):
     """
     Implementation for the loss used in masked language model (MLM) training.
     """
 
     def __init__(self, args, task):
-        super(MaskLeanerLoss, self).__init__(args, task)
+        super(MaskLeanerCoLoss, self).__init__(args, task)
 
         self.vocab = self.task.source_dictionary
         self.mask_idx = self.task.mask_idx
@@ -34,7 +34,6 @@ class MaskLeanerLoss(FairseqCriterion):
 
         self.masker_lambda = args.masker_lambda
         self.do_deterministic = args.masker_deterministic
-
         if self.random_token_prob > 0.0:
             if self.freq_weighted_replacement:
                 weights = np.array(self.vocab.count)
@@ -46,8 +45,8 @@ class MaskLeanerLoss(FairseqCriterion):
     @staticmethod
     def add_args(parser):
         """Add criterion-specific arguments to the parser."""
-        super(MaskLeanerLoss,
-              MaskLeanerLoss).add_args(parser)
+        super(MaskLeanerCoLoss,
+              MaskLeanerCoLoss).add_args(parser)
 
         parser.add_argument('--masker_lambda', default=0.5, type=float, metavar='D',
                             help='weight for the deeply supervised loss')
@@ -85,6 +84,7 @@ class MaskLeanerLoss(FairseqCriterion):
                 t_masker_out = torch.clamp(masker_out * float(num_mask), 0, 1)
                 random_s = torch.bernoulli(t_masker_out).type(torch.bool)
                 masked_idxes = random_s  # not not index, but table of True of False##
+
 
         labels_list = []
         with torch.no_grad():
@@ -192,13 +192,21 @@ class MaskLeanerLoss(FairseqCriterion):
             ignore_index=self.padding_idx,
         )
 
-        pred = torch.argmax(logits, dim=-1)
-        is_right = (pred == targets).type(loss.type())
+        pred_softmax = F.softmax(logits, dim=-1)
 
-        masker_fail_table = torch.full_like(inps, 0).type(loss.type())
-        masker_fail_table[masked_tokens] = is_right
-        
-        masker_loss = masker_fail_table * masker_out
+        target_index = targets.unsqueeze(dim=-1)
+
+        #import IPython
+        #IPython.embed()
+        print(pred_softmax.shape, targets.shape)
+        target_score = torch.gather(pred_softmax, dim=-1, index=target_index)
+        target_score = target_score.view(-1)
+
+        masker_out = masker_out[masked_tokens]
+        masker_out = masker_out.view(-1)
+
+
+        masker_loss = target_score * masker_out
         masker_loss = masker_loss.sum()
 
         total_loss = masker_loss * self.masker_lambda + loss
