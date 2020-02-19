@@ -76,14 +76,18 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
         #print('masker 1 shape', masker_out.shape)
 
+        if num_mask == 0:
+            num_mask = 1
         if self.do_deterministic:
             masked_tokens, masked_idxes = torch.topk(masker_out,
                                                      num_mask, dim=-1)
         else:
             with torch.no_grad():
-                t_masker_out = torch.clamp(masker_out * float(num_mask), 0, 1)
-                random_s = torch.bernoulli(t_masker_out).type(torch.bool)
-                masked_idxes = random_s  # not not index, but table of True of False##
+                #t_masker_out = torch.clamp(masker_out * float(num_mask), 0, 1)
+                #random_s = torch.bernoulli(t_masker_out).type(torch.bool)
+                #masked_idxes = random_s  # not not index, but table of True of False##
+
+                masked_idxes = torch.multinomial(masker_out, num_mask, replacement=False)
 
 
         labels_list = []
@@ -198,7 +202,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
         #import IPython
         #IPython.embed()
-        print(pred_softmax.shape, targets.shape)
+        #print(pred_softmax.shape, targets.shape)
         target_score = torch.gather(pred_softmax, dim=-1, index=target_index)
         target_score = target_score.view(-1)
 
