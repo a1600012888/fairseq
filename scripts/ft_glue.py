@@ -44,7 +44,7 @@ if __name__ == '__main__':
 
 
     cmds =["CUDA_VISIBLE_DEVICES={}".format(args.d),
-           " python3 train.py /home/tianyuan/data/glue-32768-fast/{}/ ".format(dataset_dir_name[index]),
+           " python3 train.py ~/data/glue-32768-fast/{}/ ".format(dataset_dir_name[index]),
     "--restore-file {} ".format(args.p),
     "--max-positions 512 --max-sentences {} ".format(max_sentences[index]),
     "--max-tokens 4400 --task sentence_prediction --reset-optimizer ",
