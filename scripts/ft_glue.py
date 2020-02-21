@@ -1,5 +1,6 @@
 import argparse
 import os
+import numpy as np
 
 
 task_name = ['MNLI', 'QNLI', 'QQP', 'RTE', 'SST-2', 'MRPC', 'CoLA', 'STS-B']
@@ -39,6 +40,10 @@ if __name__ == '__main__':
     index = task_name.index(args.task)
 
 
+    rand_int = np.random.randint(0, 1000000000)
+
+    print('Random Seed: {}'.format(rand_int))
+
 
 
 
@@ -57,7 +62,7 @@ if __name__ == '__main__':
     --optimizer adam --adam-betas '(0.9, 0.98)' --adam-eps 1e-06 \
     --clip-norm 0.0 --lr-scheduler polynomial_decay ",
     "--lr {} --total-num-update {} ".format(lrs[index], total_num_updates[index]),
-    "--warmup-updates {} ".format(warm_updates[index]),
+    "--warmup-updates {} --seed {} ".format(warm_updates[index], rand_int),
     "--max-epoch 10 \
     --find-unused-parameters \
     --best-checkpoint-metric accuracy --maximize-best-checkpoint-metric;"
