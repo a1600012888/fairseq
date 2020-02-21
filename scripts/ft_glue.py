@@ -24,8 +24,8 @@ if __name__ == '__main__':
 
 
     parser.add_argument('--arch', type=str, default='robert_base',
-                        choices=['robert_base', 'robert_leaner',
-                                 'robert_base_deepsup', 'robert_base_norm_fl'])
+                        choices=['roberta_base', 'roberta_leaner',
+                                 'roberta_base_deepsup', 'roberta_base_norm_fl'])
 
     parser.add_argument('--task', type=str, default='SST-2',
                         choices=task_name)
