@@ -73,6 +73,10 @@ class MaskLeanerCoLoss(FairseqCriterion):
         num_mask = int(sz * 0.15)
 
         masker_out = model.masker(inps)[0]#.view(inps.size(0), -1)
+        log_masking_softmax = torch.log(masker_out)
+        p_logp = log_masking_softmax * masker_out
+
+        masker_entropy = torch.sum(p_logp) * -1.0
 
         #print('masker 1 shape', masker_out.shape)
 
@@ -222,6 +226,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
             'sample_size': sample_size,
             'masker_loss':utils.item(masker_loss.data) if reduce else masker_loss.data,
             'total_loss': utils.item(total_loss.data) if reduce else total_loss.data,
+            'masker_entropy': utils.item(masker_entropy.data) if reduce else masker_entropy,
         }
         return total_loss, sample_size, logging_output
 
@@ -231,10 +236,12 @@ class MaskLeanerCoLoss(FairseqCriterion):
         loss_sum = sum(log.get('loss', 0) for log in logging_outputs)
         masker_loss_sum = sum(log.get('masker_loss', 0) for log in logging_outputs)
         total_loss_sum = sum(log.get('total_loss', 0) for log in logging_outputs)
+        masker_entropy = sum(log.get('masker_entropy', 0) for log in logging_outputs)
 
         sample_size = sum(log.get('sample_size', 0) for log in logging_outputs)
 
         metrics.log_scalar('loss', loss_sum / sample_size / math.log(2), sample_size, round=3)
+        metrics.log_scalar('masker_entropy', masker_entropy / sample_size / math.log(2), sample_size, round=3)
         metrics.log_scalar('masker_loss', masker_loss_sum / sample_size / math.log(2), sample_size, round=3)
         metrics.log_scalar('total_loss', total_loss_sum / sample_size / math.log(2), sample_size, round=3)
         metrics.log_derived('ppl', lambda meters: round(2**meters['loss'].avg, 3))
