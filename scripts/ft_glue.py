@@ -1,5 +1,5 @@
 import argparse
-
+import os
 
 
 task_name = ['MNLI', 'QNLI', 'QQP', 'RTE', 'SST-2', 'MRPC', 'CoLA', 'STS-B']
@@ -69,3 +69,5 @@ if __name__ == '__main__':
         cmd += c
 
     print(cmd)
+
+    os.system(cmd)
