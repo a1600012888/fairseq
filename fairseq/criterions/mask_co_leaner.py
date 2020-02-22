@@ -73,10 +73,12 @@ class MaskLeanerCoLoss(FairseqCriterion):
         num_mask = int(sz * 0.15)
 
         masker_out = model.masker(inps)[0]#.view(inps.size(0), -1)
-        log_masking_softmax = torch.log(masker_out)
-        p_logp = log_masking_softmax * masker_out
+        with torch.no_grad():
+            adz = torch.ones_like(masker_out) * 1e-5
+            log_masking_softmax = torch.log(masker_out * adz)
+            p_logp = log_masking_softmax * masker_out
 
-        masker_entropy = torch.sum(p_logp) * -1.0
+            masker_entropy = torch.sum(p_logp) * -1.0
 
         #print('masker 1 shape', masker_out.shape)
 
