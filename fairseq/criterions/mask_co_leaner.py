@@ -42,6 +42,8 @@ class MaskLeanerCoLoss(FairseqCriterion):
             weights[:self.vocab.nspecial] = 0
             self.weights = weights / weights.sum()
 
+        self.register_buffer('random_weights', torch.tensor(self.weights).type(torch.float32))
+
     @staticmethod
     def add_args(parser):
         """Add criterion-specific arguments to the parser."""
@@ -79,6 +81,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
             p_logp = log_masking_softmax * masker_out
 
             masker_entropy = torch.sum(p_logp) * -1.0
+            #print(masker_entropy, inps.shape)
 
         #print('masker 1 shape', masker_out.shape)
 
@@ -154,20 +157,27 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
 
                 new_item = inp.clone()
-                new_item[mask] = self.mask_idx
+                #print('mask, new item', mask.shape, new_item.shape, mask.type(), torch.sum(mask).item())
+                mask_idxs = torch.full_like(new_item, self.mask_idx)
+                new_item = torch.where(mask, mask_idxs, new_item)
+                #new_item[mask] = self.mask_idx
                 if rand_mask is not None:
+                    num_rand_int = rand_mask.sum().item()
                     num_rand = rand_mask.sum()
-                    if num_rand > 0:
+
+                    print('num_rand', num_rand_int)
+                    if num_rand_int > 0:
                         #if self.mask_whole_words is not None:
                         #    #rand_mask = torch.repeat(rand_mask, word_lens)
                         #    rand_mask = rand_mask.repeat(word_lens)
                         #    num_rand = rand_mask.sum()
                         #import IPython
                         #IPython.embed()
-                        rand_tensor = torch.tensor(
-                            np.random.choice(len(self.vocab),
-                                             num_rand.cpu().numpy(),
-                                             p=self.weights)).to(mask.device)
+                        # rand_tensor = torch.tensor(
+                        #     np.random.choice(len(self.vocab),
+                        #                      num_rand.cpu().numpy(),
+                        #                      p=self.weights)).to(mask.device)
+                        rand_tensor = torch.multinomial(self.random_weights, num_rand,  False)
                         rand_tensor.type(inps.type())
                         new_item[rand_mask] = rand_tensor
                 new_inps.append(new_item)
@@ -220,6 +230,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
         masker_loss = masker_loss.sum()
 
         total_loss = masker_loss * self.masker_lambda + loss
+        #print('sample size', sample_size)
 
         logging_output = {
             'loss': utils.item(loss.data) if reduce else loss.data,
@@ -243,8 +254,8 @@ class MaskLeanerCoLoss(FairseqCriterion):
         sample_size = sum(log.get('sample_size', 0) for log in logging_outputs)
 
         metrics.log_scalar('loss', loss_sum / sample_size / math.log(2), sample_size, round=3)
-        metrics.log_scalar('masker_entropy', masker_entropy / sample_size / math.log(2), sample_size, round=3)
-        metrics.log_scalar('masker_loss', masker_loss_sum / sample_size / math.log(2), sample_size, round=3)
+        metrics.log_scalar('masker_entropy', masker_entropy / sample_size , sample_size, round=3)
+        metrics.log_scalar('masker_loss', masker_loss_sum / sample_size * 100.0 , sample_size, round=3)
         metrics.log_scalar('total_loss', total_loss_sum / sample_size / math.log(2), sample_size, round=3)
         metrics.log_derived('ppl', lambda meters: round(2**meters['loss'].avg, 3))
 
