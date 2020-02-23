@@ -165,7 +165,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
                     num_rand_int = rand_mask.sum().item()
                     num_rand = rand_mask.sum()
 
-                    print('num_rand', num_rand_int)
+                    #print('num_rand', num_rand_int)
                     if num_rand_int > 0:
                         #if self.mask_whole_words is not None:
                         #    #rand_mask = torch.repeat(rand_mask, word_lens)
