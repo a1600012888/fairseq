@@ -254,8 +254,8 @@ class MaskLeanerCoLoss(FairseqCriterion):
         sample_size = sum(log.get('sample_size', 0) for log in logging_outputs)
 
         metrics.log_scalar('loss', loss_sum / sample_size / math.log(2), sample_size, round=3)
-        metrics.log_scalar('masker_entropy', masker_entropy / sample_size , sample_size, round=3)
-        metrics.log_scalar('masker_loss', masker_loss_sum / sample_size * 100.0 , sample_size, round=3)
+        metrics.log_scalar('masker_entropy', masker_entropy / sample_size / math.log(2) , sample_size, round=3)
+        metrics.log_scalar('masker_loss', masker_loss_sum / sample_size / math.log(2)  , sample_size, round=5)
         metrics.log_scalar('total_loss', total_loss_sum / sample_size / math.log(2), sample_size, round=3)
         metrics.log_derived('ppl', lambda meters: round(2**meters['loss'].avg, 3))
 
