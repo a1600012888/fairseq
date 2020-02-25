@@ -9,3 +9,4 @@ from .model_camembert import *  # noqa
 from .model_xlmr import *  # noqa
 from .model_deepsup import *
 from .model_norm_ml import *
+from .model_chat import *

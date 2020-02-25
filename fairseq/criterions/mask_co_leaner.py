@@ -212,6 +212,9 @@ class MaskLeanerCoLoss(FairseqCriterion):
             ignore_index=self.padding_idx,
         )
 
+        #import IPython
+        #IPython.embed()
+
         pred_softmax = F.softmax(logits, dim=-1)
 
         target_index = targets.unsqueeze(dim=-1)
@@ -226,11 +229,14 @@ class MaskLeanerCoLoss(FairseqCriterion):
         masker_out = masker_out.view(-1)
 
 
+        target_score = target_score.detach() # important
         masker_loss = target_score * masker_out
         masker_loss = masker_loss.sum()
 
         total_loss = masker_loss * self.masker_lambda + loss
         #print('sample size', sample_size)
+
+
 
         logging_output = {
             'loss': utils.item(loss.data) if reduce else loss.data,
