@@ -237,6 +237,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
 
         target_score = target_score.detach() # important
+        target_score = target_score - target_score.mean()
         masker_loss = target_score * masker_out
         masker_loss = masker_loss.sum()
 
