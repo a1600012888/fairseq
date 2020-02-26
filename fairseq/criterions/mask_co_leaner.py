@@ -82,9 +82,14 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
             masker_entropy = torch.sum(p_logp) * -1.0
 
-            top5_masker, _ = torch.topk(masker_out, 5, dim=-1)
-            top2_dist = top5_masker[:, 0] - top5_masker[:, 1]
-            top5_dist = top5_masker[:, 0] - top5_masker[:, 4]
+            token_length = masker_out.size(1)
+
+            index5 = 5 if token_length > 4 else token_length
+            index2 = 2 if token_length > 2 else token_length
+
+            top5_masker, _ = torch.topk(masker_out, index5, dim=-1)
+            top2_dist = top5_masker[:, 0] - top5_masker[:, index2-1]
+            top5_dist = top5_masker[:, 0] - top5_masker[:, index5-1]
             top2_dist = torch.mean(top2_dist)
             top5_dist = torch.mean(top5_dist)
 
