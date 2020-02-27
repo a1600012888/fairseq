@@ -261,7 +261,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
             'masker_entropy': utils.item(masker_entropy.data) if reduce else masker_entropy.data,
             'top2_dist': utils.item(top2_dist.data) if reduce else top2_dist.data,
             'top5_dist': utils.item(top5_dist.data) if reduce else top5_dist.data,
-            'batch_m': utils.item(target_score.data) if reduce else target_score.data,
+            'batch_m': utils.item(target_score.mean().data) if reduce else target_score.mean().data,
         }
         return total_loss, sample_size, logging_output
 
