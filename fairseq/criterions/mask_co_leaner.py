@@ -261,6 +261,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
             'masker_entropy': utils.item(masker_entropy.data) if reduce else masker_entropy.data,
             'top2_dist': utils.item(top2_dist.data) if reduce else top2_dist.data,
             'top5_dist': utils.item(top5_dist.data) if reduce else top5_dist.data,
+            'batch_m': utils.item(target_score.data) if reduce else target_score.data,
         }
         return total_loss, sample_size, logging_output
 
@@ -273,14 +274,16 @@ class MaskLeanerCoLoss(FairseqCriterion):
         masker_entropy = sum(log.get('masker_entropy', 0) for log in logging_outputs)
         top2_dist = sum(log.get('top2_dist', 0) for log in logging_outputs) / len(logging_outputs)
         top5_dist = sum(log.get('top5_dist', 0) for log in logging_outputs) / len(logging_outputs)
+        batch_m = sum(log.get('batch_m', 0) for log in logging_outputs) / len(logging_outputs)
 
         sample_size = sum(log.get('sample_size', 0) for log in logging_outputs)
 
         metrics.log_scalar('loss', loss_sum / sample_size / math.log(2), sample_size, round=3)
         metrics.log_scalar('masker_entropy', masker_entropy / sample_size / math.log(2) , sample_size, round=3)
 
-        metrics.log_scalar('top2_dist', top2_dist, sample_size, round=5)
-        metrics.log_scalar('top5_dist', top5_dist, sample_size, round=5)
+        metrics.log_scalar('top2_dist', top2_dist, sample_size, round=4)
+        metrics.log_scalar('top5_dist', top5_dist, sample_size, round=4)
+        metrics.log_scalar('batch_m', batch_m, sample_size, round=4)
         metrics.log_scalar('masker_loss', masker_loss_sum / sample_size / math.log(2)  , sample_size, round=5)
         metrics.log_scalar('total_loss', total_loss_sum / sample_size / math.log(2), sample_size, round=3)
         metrics.log_derived('ppl', lambda meters: round(2**meters['loss'].avg, 3))
