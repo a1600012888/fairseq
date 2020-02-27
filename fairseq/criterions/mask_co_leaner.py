@@ -242,7 +242,8 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
 
         target_score = target_score.detach() # important
-        target_score = target_score - target_score.mean()
+        target_mean = target_score.mean()
+        target_score = target_score - target_mean
         masker_loss = target_score * masker_out
         masker_loss = masker_loss.sum()
 
@@ -261,7 +262,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
             'masker_entropy': utils.item(masker_entropy.data) if reduce else masker_entropy.data,
             'top2_dist': utils.item(top2_dist.data) if reduce else top2_dist.data,
             'top5_dist': utils.item(top5_dist.data) if reduce else top5_dist.data,
-            'batch_m': utils.item(target_score.mean().data) if reduce else target_score.mean().data,
+            'batch_m': utils.item(target_mean.data) if reduce else target_mean.data,
         }
         return total_loss, sample_size, logging_output
 
