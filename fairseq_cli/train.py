@@ -126,6 +126,11 @@ def main(args, init_distributed=False):
     train_meter.stop()
     logger.info('done training in {:.1f} seconds'.format(train_meter.sum))
 
+    #with open('results.txt', 'a') as f:
+    #    f.write('{}'.format(valid_losses[-1]))
+
+    #print(valid_losses)
+
 
 def should_stop_early(args, valid_loss):
     if args.patience <= 0:

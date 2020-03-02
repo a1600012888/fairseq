@@ -53,6 +53,20 @@ class MaskedLmLoss(FairseqCriterion):
             reduction='sum',
             ignore_index=self.padding_idx,
         )
+
+        #tmp_var = F.softmax(targets, dim=1)
+        #import IPython
+        #IPython.embed()
+        #preds = F.softmax(logits, dim=-1)
+        #target_index = targets.unsqueeze(dim=-1)
+        #target_score = torch.gather(preds, dim=-1, index=target_index)
+        #tm = torch.mean(target_score).item()
+        #tma = torch.max(target_score).item()
+        #tmin = torch.min(target_score).item()
+        #tme = torch.median(target_score).item()
+        #print('Mean:{:3f} -- Max:{:.3f} -- Min:{:.3f}  -- Median:{:.3f}'.format(tm, tma, tmin, tme))
+
+
         logging_output = {
             'loss': utils.item(loss.data) if reduce else loss.data,
             'ntokens': sample['ntokens'],

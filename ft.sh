@@ -1,5 +1,5 @@
-MP=/home/tianyuan/exps/fairseq/Robera-base-masker-32768-p512-b256-c0.3/checkpoint_7_200000.pt
-ARCH='roberta_leaner'
+MP=~/exps/fairseq/SE-F-SE-AVG-16-roberta_base-03768-p512-b256/checkpoint_7_200000.pt
+ARCH='roberta_base-se'
 
 python3 scripts/ft_glue.py --arch ${ARCH} --task SST-2 -p ${MP}  -d 1 > sst1.txt &
 python3 scripts/ft_glue.py --arch ${ARCH} --task SST-2 -p ${MP}  -d 2 > sst2.txt &

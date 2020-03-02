@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-EXEC_ID=SE-F-16-roberta_base-03768-p512-b256
+EXEC_ID=SE-F-16-roberta_base-03768-p512-b256-lr2e-4
 DATA_DIR=~/data/wiki_book_32768
 TOTAL_UPDATES=1000000
 WARMUP_UPDATES=10000
-PEAK_LR=0.0001
+PEAK_LR=0.0002
 TOKENS_PER_SAMPLE=512
 MAX_POSITIONS=512
 MAX_SENTENCES=16 # 32 for v100 and fp16
@@ -18,7 +18,7 @@ echo 'Environment'
 echo 'Start Training'
 python3 train.py --fp16 ${DATA_DIR} --ddp-backend=no_c10d \
     --task masked_lm --criterion masked_lm \
-    --arch roberta_base-se --sample-break-mode complete --tokens-per-sample ${TOKENS_PER_SAMPLE} \
+    --arch roberta_base-se --se-idx 0  --sample-break-mode complete --tokens-per-sample ${TOKENS_PER_SAMPLE} \
     --optimizer adam --adam-betas '(0.9, 0.98)' --adam-eps 1e-6 --clip-norm 0.0 \
     --lr-scheduler polynomial_decay --lr ${PEAK_LR} --warmup-updates ${WARMUP_UPDATES} --total-num-update ${TOTAL_UPDATES} \
     --dropout 0.1 --attention-dropout 0.1 --activation-dropout 0.1 --weight-decay 0.01 \
