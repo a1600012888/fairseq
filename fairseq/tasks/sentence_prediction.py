@@ -124,7 +124,7 @@ class SentencePredictionTask(FairseqTask):
             return dataset
 
         input0 = make_dataset('input0', self.source_dictionary)
-        assert input0 is not None, 'could not find dataset: {}'.format(get_path(type, split))
+        assert input0 is not None, 'could not find dataset: {}'.format(get_path('input0', split))
         input1 = make_dataset('input1', self.source_dictionary)
 
         if self.args.init_token is not None:
