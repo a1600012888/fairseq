@@ -30,6 +30,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+submit/
 
 # Checkpoints
 checkpoints
