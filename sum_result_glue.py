@@ -10,7 +10,7 @@ import pandas as pd
 import argparse
 parser = argparse.ArgumentParser()
 # parser.add_argument('--philly', action = 'store_true')
-parser.add_argument('-p1', type=str, default = '/gpu-01-data/zhenhui/downstream') 
+parser.add_argument('-p1', type=str, default = '.')
 parser.add_argument('-p2s', type=str, nargs='+', required = True)
 parser.add_argument('-cs',type=str, nargs='+', required = True)
 # parser.add_argument('-v',type=str, required = True, choices=['v1', 'v2'])
@@ -20,7 +20,7 @@ parser.add_argument('-task_names',type=str, nargs='+', required = True)
 args = parser.parse_args()
 
 
-project_folder = "electra" # "adaptive_bert"  # !! TO UPDATE
+project_folder = "" # "adaptive_bert"  # !! TO UPDATE
 
 def readResult(path, keyword='best_'):
     files = os.listdir(path)
@@ -61,16 +61,16 @@ for p2 in args.p2s:
         for c in args.cs:
             bert_model_config = {
                 "bert_model_arch": args.arch,
-                "bert_model_checkpoint": "checkpoint{}".format(c),
+                "bert_model_checkpoint": "{}".format(c),
                 "procedure_folder1": args.p1,
                 "procedure_folder2": p2,
-            }  
-            bert_model_config["procedure_path"] = "{}/{}".format(bert_model_config["procedure_folder1"], bert_model_config["procedure_folder2"])
-            
-            logpath="big-0120-{}/GLUE/{}/{}".format(bert_model_config["procedure_path"], bert_model_config["bert_model_checkpoint"], task)
-        
+            }
+            bert_model_config["procedure_path"] = "{}".format( bert_model_config["procedure_folder2"])
+
+            logpath="{}/GLUE/{}/{}".format(bert_model_config["procedure_path"], bert_model_config["bert_model_checkpoint"], task)
+
             summ = []
-            
+
             results = readResult(logpath)
             # results.groupby(['0','1','2','3'])
             #results = results.join(results.groupby([0,1,2,3])[5].median(), on=[0,1,2,3], rsuffix='_median')
@@ -84,7 +84,7 @@ for p2 in args.p2s:
     ress[p2]= anss
 print(ress)
         # print(results.sort_values(by='5_mean')[-20:])
-        
+
         # results.to_csv(logpath.replace('/','_')+'_result.csv', index=False)
         # print("file saved at {}".format(logpath.replace('/','_')+'_result.csv'))
-    
+
