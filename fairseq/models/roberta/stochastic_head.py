@@ -162,7 +162,7 @@ class StochasticAttentionRandom(nn.Module):
             assert key is not None and value is not None
 
             y = self.dropout_y(self.y)
-            scale_ratio = torch.sum(y) / torch.sum(self.y)
+            scale_ratio = 4.0
             y = y / scale_ratio
 
             q_weight = y * self.q_proj.weight
