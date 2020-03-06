@@ -51,6 +51,7 @@ class StochasticAttentionRandom(nn.Module):
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
 
         self.dropout = dropout
+        self.total_dim = int(embed_dim * expand)
         self.head_dim = int(embed_dim * expand * 0.25)
         self.scaling = self.head_dim ** -0.5
 
@@ -235,19 +236,19 @@ class StochasticAttentionRandom(nn.Module):
 
             q = (
                 q.contiguous()
-                    .view(tgt_len, bsz, self.head_dim)
+                    .view(tgt_len, bsz, self.total_dim)
                     .transpose(0, 1)
             )
             if k is not None:
                 k = (
                     k.contiguous()
-                        .view(-1, bsz, self.head_dim)
+                        .view(-1, bsz, self.total_dim)
                         .transpose(0, 1)
                 )
             if v is not None:
                 v = (
                     v.contiguous()
-                        .view(-1, bsz, self.head_dim)
+                        .view(-1, bsz, self.total_dim)
                         .transpose(0, 1)
                 )
 
@@ -286,13 +287,13 @@ class StochasticAttentionRandom(nn.Module):
             )
             assert v is not None
             attn = torch.bmm(attn_probs, v)
-            assert list(attn.size()) == [bsz, tgt_len, self.head_dim]
+            assert list(attn.size()) == [bsz, tgt_len, self.total_dim]
             if self.onnx_trace and attn.size(1) == 1:
                 # when ONNX tracing a single decoder step (sequence length == 1)
                 # the transpose is a no-op copy before view, thus unnecessary
-                attn = attn.contiguous().view(tgt_len, bsz, self.head_dim)
+                attn = attn.contiguous().view(tgt_len, bsz, self.total_dim)
             else:
-                attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, self.head_dim)
+                attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, self.total_dim)
             attn = F.linear(attn, o_weight, o_bias)
             attn_weights: Optional[Tensor] = None
             if need_weights:
@@ -502,7 +503,7 @@ class StochasticAttentionRandom(nn.Module):
         )
         assert v is not None
         attn = torch.bmm(attn_probs, v)
-        assert list(attn.size()) == [bsz * self.num_heads, tgt_len, self.head_dim]
+        assert list(attn.size()) == [bsz * self.num_heads, tgt_len, self.total_dim]
         if self.onnx_trace and attn.size(1) == 1:
             # when ONNX tracing a single decoder step (sequence length == 1)
             # the transpose is a no-op copy before view, thus unnecessary
