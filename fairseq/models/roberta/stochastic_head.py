@@ -51,8 +51,8 @@ class StochasticAttentionRandom(nn.Module):
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
 
         self.dropout = dropout
-        self.head_dim = int(embed_dim * expand)
-        self.scaling = (embed_dim * expand) ** -0.5
+        self.head_dim = int(embed_dim * expand * 0.25)
+        self.scaling = self.head_dim ** -0.5
 
         self.self_attention = self_attention
         self.encoder_decoder_attention = encoder_decoder_attention
@@ -161,12 +161,15 @@ class StochasticAttentionRandom(nn.Module):
             assert key is not None and value is not None
 
             y = self.dropout_y(self.y)
+            scale_ratio = torch.sum(y) / torch.sum(self.y)
+            y = y / scale_ratio
 
             q_weight = y * self.q_proj.weight
             k_weight = y * self.k_proj.weight
             v_weight = y * self.v_proj.weight
 
             o_weight = y.transpose(1, 0) * self.out_proj.weight
+            o_weight = o_weight * scale_ratio
 
             o_bias = self.out_proj.bias
             q_bias = self.q_proj.bias
