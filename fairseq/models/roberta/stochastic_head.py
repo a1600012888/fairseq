@@ -51,12 +51,15 @@ class StochasticAttentionRandom(nn.Module):
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
 
         self.dropout = dropout
+
+        self.dropout_rate = 0.5
         self.total_dim = int(embed_dim * expand)
-        self.head_dim = int(embed_dim * expand * 0.25)
+        self.head_dim = int(embed_dim * expand * self.dropout_rate)
         self.scaling = self.head_dim ** -0.5
 
         self.self_attention = self_attention
         self.encoder_decoder_attention = encoder_decoder_attention
+
 
         assert not self.self_attention or self.qkv_same_dim, (
             "Self-attention requires query, key and " "value to be of the same size"
@@ -70,7 +73,7 @@ class StochasticAttentionRandom(nn.Module):
 
         self.register_buffer('y', torch.ones((int(embed_dim*expand), 1)))
 
-        self.dropout_y = nn.Dropout(p=0.75, inplace=False)
+        self.dropout_y = nn.Dropout(p=self.dropout_rate, inplace=False)
 
         if add_bias_kv:
             self.bias_k = Parameter(torch.Tensor(1, 1, int(embed_dim*expand)))
@@ -162,7 +165,11 @@ class StochasticAttentionRandom(nn.Module):
             assert key is not None and value is not None
 
             y = self.dropout_y(self.y)
-            scale_ratio = 4.0
+
+            if self.training:
+                scale_ratio = 1 / (1 - self.dropout_rate)
+            else:
+                scale_ratio = 1.0
             y = y / scale_ratio
 
             q_weight = y * self.q_proj.weight
