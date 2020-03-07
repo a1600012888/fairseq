@@ -270,7 +270,7 @@ class RobertaMaskLeaner(FairseqLanguageModel):
             args.max_positions = args.tokens_per_sample
 
         encoder = RobertaEncoder(args, task.source_dictionary)
-        masker = MaskerEncoder(args, task.source_dictionary, ratio=4)
+        masker = MaskerEncoder(args, task.source_dictionary, encoder.sentence_encoder.embed_tokens, ratio=4)
         return cls(args, encoder, masker)
 
     def forward(self, src_tokens, features_only=False, return_all_hiddens=False, classification_head_name=None, **kwargs):
@@ -527,7 +527,7 @@ class MaskerEncoder(FairseqDecoder):
     by :class:`~fairseq.models.FairseqLanguageModel`.
     """
 
-    def __init__(self, args, dictionary, ratio=4):
+    def __init__(self, args, dictionary, share_embed_tokens, ratio=4):
         super().__init__(dictionary)
         self.args = args
 
@@ -542,10 +542,10 @@ class MaskerEncoder(FairseqDecoder):
         self.sentence_encoder = TransformerSentenceEncoder(
             padding_idx=dictionary.pad(),
             vocab_size=len(dictionary),
-            num_encoder_layers=args.encoder_layers // ratio,
-            embedding_dim=args.encoder_embed_dim,
-            ffn_embedding_dim=args.encoder_ffn_embed_dim,
-            num_attention_heads=args.encoder_attention_heads,
+            num_encoder_layers=args.encoder_layers,
+            embedding_dim=args.encoder_embed_dim // ratio,
+            ffn_embedding_dim=args.encoder_ffn_embed_dim // ratio,
+            num_attention_heads=args.encoder_attention_heads // ratio,
             dropout=args.dropout,
             attention_dropout=args.attention_dropout,
             activation_dropout=args.activation_dropout,
@@ -555,9 +555,12 @@ class MaskerEncoder(FairseqDecoder):
             encoder_normalize_before=True,
             apply_bert_init=True,
             activation_fn=args.activation_fn,
+            # embedding sharing with RoBERTa
+            share_embed_tokens=share_embed_tokens,
+            shared_embedding_dim=args.encoder_embed_dim,
         )
         self.lm_head = RobertaMaskLeanerHead(
-            embed_dim=args.encoder_embed_dim,
+            embed_dim=args.encoder_embed_dim // ratio,
         )
 
     def forward(self, src_tokens, features_only=False, return_all_hiddens=False, masked_tokens=None, **unused):
@@ -631,6 +634,8 @@ def base_architecture(args):
     args.pooler_dropout = getattr(args, 'pooler_dropout', 0.0)
     args.encoder_layers_to_keep = getattr(args, 'encoder_layers_to_keep', None)
     args.encoder_layerdrop = getattr(args, 'encoder_layerdrop', 0.0)
+
+    args.encoder_normalize_before = getattr(args, 'encoder_normalize_before', False)
 
 
 @register_model_architecture('roberta', 'roberta_base')

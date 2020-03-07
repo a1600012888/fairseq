@@ -16,7 +16,6 @@ from fairseq.modules import (
 )
 import random
 
-
 def init_bert_params(module):
     """
     Initialize the weights specific to the BERT Model.
@@ -64,7 +63,7 @@ class TransformerSentenceEncoder(nn.Module):
     Output:
         - a tuple of the following:
             - a list of internal model states used to compute the
-              predictions where each tensor has shape T x B x C
+              predictions where each tensor has shape B x T x C
             - sentence representation associated with first input token
               in format B x C.
     """
@@ -80,12 +79,13 @@ class TransformerSentenceEncoder(nn.Module):
         dropout: float = 0.1,
         attention_dropout: float = 0.1,
         activation_dropout: float = 0.1,
-        layerdrop : float = 0.0,
+        layerdrop: float = 0.0,
         max_seq_len: int = 256,
         num_segments: int = 2,
         use_position_embeddings: bool = True,
         offset_positions_by_padding: bool = True,
         encoder_normalize_before: bool = False,
+        embedding_normalize: bool = False,
         apply_bert_init: bool = False,
         activation_fn: str = "relu",
         learned_pos_embedding: bool = True,
@@ -95,7 +95,8 @@ class TransformerSentenceEncoder(nn.Module):
         freeze_embeddings: bool = False,
         n_trans_layers_to_freeze: int = 0,
         export: bool = False,
-        traceable: bool = False,
+        share_embed_tokens: object = None,
+        shared_embedding_dim: int = 768,
     ) -> None:
 
         super().__init__()
@@ -109,11 +110,17 @@ class TransformerSentenceEncoder(nn.Module):
         self.use_position_embeddings = use_position_embeddings
         self.apply_bert_init = apply_bert_init
         self.learned_pos_embedding = learned_pos_embedding
-        self.traceable = traceable
+        self.shared_embedding_dim = shared_embedding_dim
 
-        self.embed_tokens = nn.Embedding(
-            self.vocab_size, self.embedding_dim, self.padding_idx
-        )
+        if share_embed_tokens is None:
+            self.share_embed = False
+            self.embed_tokens = nn.Embedding(
+                self.vocab_size, self.embedding_dim, self.padding_idx
+            )
+        else:
+            self.share_embed = True
+            self.embed_tokens = share_embed_tokens
+            self.embed_linear = nn.Linear(self.shared_embedding_dim, self.embedding_dim)
         self.embed_scale = embed_scale
 
         self.segment_embeddings = (
@@ -146,6 +153,7 @@ class TransformerSentenceEncoder(nn.Module):
                     add_bias_kv=add_bias_kv,
                     add_zero_attn=add_zero_attn,
                     export=export,
+                    # encoder_normalize_before=encoder_normalize_before,
                 )
                 for _ in range(num_encoder_layers)
             ]
@@ -184,10 +192,15 @@ class TransformerSentenceEncoder(nn.Module):
 
         # compute padding mask. This is needed for multi-head attention
         padding_mask = tokens.eq(self.padding_idx)
-        if not self.traceable and not padding_mask.any():
+        if not padding_mask.any():
             padding_mask = None
 
-        x = self.embed_tokens(tokens)
+        if self.share_embed:
+            # if the embedding is shared, keep equal-size in the model
+            x = self.embed_tokens(tokens)
+            x = self.embed_linear(x)
+        else:    
+            x = self.embed_tokens(tokens)
 
         if self.embed_scale is not None:
             x *= self.embed_scale
@@ -222,12 +235,12 @@ class TransformerSentenceEncoder(nn.Module):
                 if not last_state_only:
                     inner_states.append(x)
 
+        # T x B x C -> B x T x C
+        # x = x.transpose(0, 1)
+
         sentence_rep = x[0, :, :]
 
         if last_state_only:
             inner_states = [x]
 
-        if self.traceable:
-            return torch.stack(inner_states), sentence_rep
-        else:
-            return inner_states, sentence_rep
+        return inner_states, sentence_rep
