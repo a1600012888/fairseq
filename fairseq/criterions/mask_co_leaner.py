@@ -233,28 +233,51 @@ class MaskLeanerCoLoss(FairseqCriterion):
             ignore_index=self.padding_idx,
         )
 
-        loss_ = loss_.view(batch_sz, -1)
-        masker_out = masker_out[masked_tokens].view(batch_sz, -1)
+        loss, weight_mean = None, None
+        masker_out = masker_out[masked_tokens]
+        if sample_size % batch_sz == 0:
+            loss_ = loss_.view(batch_sz, -1)
+            masker_out = masker_out.view(batch_sz, -1)
 
-        weight = torch.prod( (masker_out.detach()) * (token_length * 1.0),
-                             dim=-1, keepdim=True)
+            weight = torch.prod( (masker_out.detach()) * (token_length * 1.0),
+                                 dim=-1, keepdim=True)
 
-        weight = weight.reciprocal()
+            weight = weight.reciprocal()
 
-        #print(weight.shape, torch.mean(weight).item(), torch.max(weight).item(), torch.min(weight).item())
-        # put the average weight into logs
-        with torch.no_grad():
-            weight_mean = torch.sum(weight) # should be smaller than 1.0
+            #print(weight.shape, torch.mean(weight).item(), torch.max(weight).item(), torch.min(weight).item())
+            # put the average weight into logs
+            with torch.no_grad():
+                weight_mean = torch.sum(weight) # should be smaller than 1.0
 
-        weight = torch.clamp(weight, 1.0 - self.masker_eps, 1.0 + self.masker_eps)  # size = [sample_size]
+            weight = torch.clamp(weight, 1.0 - self.masker_eps, 1.0 + self.masker_eps)
 
+            # print (weight.size(), loss_.size())
+            loss_re = weight * loss_  # sample size
+            loss = torch.sum(loss_re)
 
-        # bert loss reweighting.  token-wise reweighting
-        # weight = 1 / masker_out.size()[-1] / masker_out[masked_tokens].detach()
-        # weight = torch.clamp(weight, 1.0 - self.masker_eps, 1.0 + self.masker_eps) # size = [sample_size]
+            masker_out = masker_out.view(-1)
+        else:
+            mask_per_sent = torch.sum(masked_tokens.int(), 1)
+            masker_out1 = masker_out.detach()
 
-        loss_re = weight * loss_
-        loss = torch.sum(loss_re)
+            loss_b, weight, idx = [], [], 0
+            for num in mask_per_sent:
+                c, p = 0, 1.0
+                for _ in range(num.item()):
+                    c += loss_[idx]
+                    p  = p * (token_length * 1.0) * masker_out1[idx]
+                    idx += 1
+                loss_b.append(c)
+                weight.append(p)
+
+            # numpy array of torch tensor!!
+            loss_b, weight = np.array(loss_b), 1.0 / np.array(weight)
+            weight_mean = np.sum(weight)
+            weight = np.clip(weight, 1.0 - self.masker_eps, 1.0 + self.masker_eps)
+
+            loss_re = loss_b * weight
+            loss = np.sum(loss_re)
+            # print (loss)
 
         #import IPython
         #IPython.embed()
@@ -263,8 +286,6 @@ class MaskLeanerCoLoss(FairseqCriterion):
         #IPython.embed()
         #print(pred_softmax.shape, targets.shape)
         bert_loss = loss_.detach().view(-1)
-
-        masker_out = masker_out.view(-1)
 
         with torch.no_grad():
             # put batch mean into logging!
