@@ -97,8 +97,8 @@ class MaskLeanerCoLoss(FairseqCriterion):
             top5_masker, _ = torch.topk(masker_out, index5, dim=-1)
             top2_dist = top5_masker[:, 0] - top5_masker[:, index2-1]
             top5_dist = top5_masker[:, 0] - top5_masker[:, index5-1]
-            top2_dist = torch.mean(top2_dist)
-            top5_dist = torch.mean(top5_dist)
+            top2_dist = torch.sum(top2_dist)
+            top5_dist = torch.sum(top5_dist)
 
             #print(masker_entropy, inps.shape)
 
@@ -217,6 +217,8 @@ class MaskLeanerCoLoss(FairseqCriterion):
         logits = model(**sample['net_input'], masked_tokens=masked_tokens)[0]
         targets = model.get_targets(sample, [logits])
 
+        batch_sz, len_token = sample['net_input']["src_tokens"].size()
+
         if sample_size != 0:
             targets = targets[masked_tokens]
 
@@ -231,9 +233,26 @@ class MaskLeanerCoLoss(FairseqCriterion):
             ignore_index=self.padding_idx,
         )
 
-        # bert loss reweighting
-        weight = 1 / masker_out.size()[-1] / masker_out[masked_tokens].detach()
-        weight = torch.clamp(weight, 1.0 - self.masker_eps, 1.0 + self.masker_eps) # size = [sample_size]
+        loss_ = loss_.view(batch_sz, -1)
+        masker_out = masker_out[masked_tokens].view(batch_sz, -1)
+
+        weight = torch.prod( (masker_out.detach()) * (token_length * 1.0),
+                             dim=-1, keepdim=True)
+
+        weight = weight.reciprocal()
+
+        #print(weight.shape, torch.mean(weight).item(), torch.max(weight).item(), torch.min(weight).item())
+        # put the average weight into logs
+        with torch.no_grad():
+            weight_mean = torch.sum(weight) # should be smaller than 1.0
+
+        weight = torch.clamp(weight, 1.0 - self.masker_eps, 1.0 + self.masker_eps)  # size = [sample_size]
+
+
+        # bert loss reweighting.  token-wise reweighting
+        # weight = 1 / masker_out.size()[-1] / masker_out[masked_tokens].detach()
+        # weight = torch.clamp(weight, 1.0 - self.masker_eps, 1.0 + self.masker_eps) # size = [sample_size]
+
         loss_re = weight * loss_
         loss = torch.sum(loss_re)
 
@@ -243,18 +262,23 @@ class MaskLeanerCoLoss(FairseqCriterion):
         #import IPython
         #IPython.embed()
         #print(pred_softmax.shape, targets.shape)
-        bert_loss = loss_.detach() * -1.0
+        bert_loss = loss_.detach().view(-1)
 
-        masker_out = masker_out[masked_tokens]
         masker_out = masker_out.view(-1)
+
+        with torch.no_grad():
+            # put batch mean into logging!
+            batch_mean = bert_loss.mean(dim=-1).sum()
 
         if self.avg_baseline:
             baseline = bert_loss.mean()
         else:
             baseline = torch.ones_like(bert_loss) * self.masker_m
-            baseline = torch.log(baseline)
+            baseline = torch.log(baseline) * -1.0
         bert_loss = bert_loss - baseline
-        masker_loss = bert_loss * masker_out
+        #masker_loss = bert_loss * masker_out * -1.0
+        avoid_div_zero = torch.ones_like(masker_out) * 1e-4
+        masker_loss = torch.log(masker_out + avoid_div_zero) * bert_loss * -1.0
         masker_loss = masker_loss.sum()
 
         total_loss = masker_loss * self.masker_lambda + loss
@@ -269,6 +293,8 @@ class MaskLeanerCoLoss(FairseqCriterion):
             'masker_entropy': utils.item(masker_entropy.data) if reduce else masker_entropy.data,
             'top2_dist': utils.item(top2_dist.data) if reduce else top2_dist.data,
             'top5_dist': utils.item(top5_dist.data) if reduce else top5_dist.data,
+            'weight_mean': utils.item(weight_mean.data) if reduce else weight_mean.data,
+            'batch_mean': utils.item(batch_mean.data) if reduce else batch_mean.data,
         }
         return total_loss, sample_size, logging_output
 
@@ -281,14 +307,21 @@ class MaskLeanerCoLoss(FairseqCriterion):
         masker_entropy = sum(log.get('masker_entropy', 0) for log in logging_outputs)
         top2_dist = sum(log.get('top2_dist', 0) for log in logging_outputs) / len(logging_outputs)
         top5_dist = sum(log.get('top5_dist', 0) for log in logging_outputs) / len(logging_outputs)
+        weight_mean = sum(log.get('weight_mean', 0) for log in logging_outputs) / len(logging_outputs)
+        batch_mean = sum(log.get('batch_mean', 0) for log in logging_outputs) / len(logging_outputs)
+        #print(len(logging_outputs), 'len logging outputs')
 
         sample_size = sum(log.get('sample_size', 0) for log in logging_outputs)
+        nsentences = sum(log.get('nsentences', 0) for log in logging_outputs)
 
         metrics.log_scalar('loss', loss_sum / sample_size / math.log(2), sample_size, round=3)
-        metrics.log_scalar('masker_entropy', masker_entropy / sample_size / math.log(2) , sample_size, round=3)
+        metrics.log_scalar('masker_entropy', masker_entropy / nsentences , 8, round=3)
 
-        metrics.log_scalar('top2_dist', top2_dist, sample_size, round=4)
-        metrics.log_scalar('top5_dist', top5_dist, sample_size, round=4)
+        metrics.log_scalar('top2_dist', top2_dist / nsentences, 32, round=4)
+        metrics.log_scalar('top5_dist', top5_dist / nsentences, 32, round=4)
+        metrics.log_scalar('weight_mean', weight_mean / nsentences, 32, round=2)
+        metrics.log_scalar('batch_mean', batch_mean / nsentences, 32, round=2)
+        #metrics.log_scalar('nsentences', nsentences, 1, round=1)
         metrics.log_scalar('masker_loss', masker_loss_sum / sample_size / math.log(2)  , sample_size, round=5)
         metrics.log_scalar('total_loss', total_loss_sum / sample_size / math.log(2), sample_size, round=3)
         metrics.log_derived('ppl', lambda meters: round(2**meters['loss'].avg, 3))

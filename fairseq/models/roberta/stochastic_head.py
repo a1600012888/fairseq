@@ -52,9 +52,9 @@ class StochasticAttentionRandom(nn.Module):
 
         self.dropout = dropout
 
-        self.dropout_rate = 0.5
+        self.dropout_rate = 0.125
         self.total_dim = int(embed_dim * expand)
-        self.head_dim = int(embed_dim * expand * self.dropout_rate)
+        self.head_dim = int(embed_dim * expand * (1 - self.dropout_rate))
         self.scaling = self.head_dim ** -0.5
 
         self.self_attention = self_attention
