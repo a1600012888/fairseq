@@ -11,3 +11,4 @@ from .model_deepsup import *
 from .model_norm_ml import *
 from .model_chat import *
 from .model_stoch_attn import *
+from .model_soft_attn import *

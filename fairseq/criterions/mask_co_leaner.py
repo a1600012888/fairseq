@@ -239,10 +239,14 @@ class MaskLeanerCoLoss(FairseqCriterion):
             loss_ = loss_.view(batch_sz, -1)
             masker_out = masker_out.view(batch_sz, -1)
 
-            weight = torch.prod( (masker_out.detach()) * (token_length * 1.0),
-                                 dim=-1, keepdim=True)
+            #
+            #weight = torch.prod( (masker_out.detach()) * (token_length * 1.0),
+            #                     dim=-1, keepdim=True)
+            weight = torch.log((masker_out.detach()) * (token_length * 1.0)) * -1.0
+            weight = torch.sum(weight, dim=-1, keepdim=True)
+            weight = torch.exp(weight)
 
-            weight = weight.reciprocal()
+            #weight = weight.reciprocal()
 
             #print(weight.shape, torch.mean(weight).item(), torch.max(weight).item(), torch.min(weight).item())
             # put the average weight into logs
@@ -262,16 +266,16 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
             loss_b, weight, idx = [], [], 0
             for num in mask_per_sent:
-                c, p = 0, 1.0
+                c, p = 0, 0.0
                 for _ in range(num.item()):
                     c += loss_[idx]
-                    p  = p * (token_length * 1.0) * masker_out1[idx]
+                    p  = p + torch.log( (token_length * 1.0) * masker_out1[idx])
                     idx += 1
                 loss_b.append(c)
-                weight.append(p)
+                weight.append(torch.exp(p*-1.0))
 
             # numpy array of torch tensor!!
-            loss_b, weight = np.array(loss_b), 1.0 / np.array(weight)
+            loss_b, weight = np.array(loss_b), np.array(weight)
             weight_mean = np.sum(weight)
             weight = np.clip(weight, 1.0 - self.masker_eps, 1.0 + self.masker_eps)
 
