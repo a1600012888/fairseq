@@ -266,7 +266,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
             loss_b, weight, idx = [], [], 0
             for num in mask_per_sent:
-                c, p = 0, 0.0
+                c, p = torch.zeros((1,), device=masker_out1.device), torch.zeros((1,), device=masker_out1.device)
                 for _ in range(num.item()):
                     c += loss_[idx]
                     p  = p + torch.log( (token_length * 1.0) * masker_out1[idx])
