@@ -276,9 +276,10 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
             # numpy array of torch tensor!!
             loss_b, weight = np.array(loss_b), np.array(weight)
-            weight_mean = np.sum(weight)
-            weight = np.clip(weight, 1.0 - self.masker_eps, 1.0 + self.masker_eps)
 
+            weight = np.clip(weight, 1.0 - self.masker_eps, 1.0 + self.masker_eps)
+            weight_mean = np.sum(weight)
+            
             loss_re = loss_b * weight
             loss = np.sum(loss_re)
             # print (loss)
