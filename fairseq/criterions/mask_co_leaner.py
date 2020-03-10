@@ -250,10 +250,11 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
             #print(weight.shape, torch.mean(weight).item(), torch.max(weight).item(), torch.min(weight).item())
             # put the average weight into logs
-            with torch.no_grad():
-                weight_mean = torch.sum(weight) # should be smaller than 1.0
 
             weight = torch.clamp(weight, 1.0 - self.masker_eps, 1.0 + self.masker_eps)
+
+            with torch.no_grad():
+                weight_mean = torch.sum(weight) # should be smaller than 1.0
 
             # print (weight.size(), loss_.size())
             loss_re = weight * loss_  # sample size
