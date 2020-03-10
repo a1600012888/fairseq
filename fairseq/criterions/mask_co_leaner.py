@@ -279,7 +279,8 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
             weight = np.clip(weight, 1.0 - self.masker_eps, 1.0 + self.masker_eps)
             weight_mean = np.sum(weight)
-            
+            weight_mean = torch.tensor(weight_mean)
+
             loss_re = loss_b * weight
             loss = np.sum(loss_re)
             # print (loss)
