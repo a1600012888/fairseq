@@ -116,7 +116,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
             num_mask = 1
 
         if self.do_deterministic:
-            masked_tokens, masked_idxes = torch.topk(masker_out, num_mask, dim=-1)
+            masked_tokens, masked_idxes = torch.topk(masker_out.float(), num_mask, dim=-1)
         else:
             with torch.no_grad():
                 #t_masker_out = torch.clamp(masker_out * float(num_mask), 0, 1)
