@@ -25,7 +25,7 @@ from fairseq.incremental_decoding_utils import with_incremental_state
 
 
 @with_incremental_state
-class FirstSEMultiheadAttention(nn.Module):
+class FirstSEKQOAttention(nn.Module):
     """Multi-headed attention.
 
     See "Attention Is All You Need" for more details.
@@ -51,10 +51,22 @@ class FirstSEMultiheadAttention(nn.Module):
         self.vdim = vdim if vdim is not None else embed_dim
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
 
-        self.fc = nn.Sequential(
+        self.fc_q = nn.Sequential(
             nn.Linear(embed_dim, embed_dim // reduction, bias=False),
             nn.ReLU(inplace=True),
-            nn.Linear(embed_dim // reduction, num_heads, bias=False),
+            nn.Linear(embed_dim // reduction, embed_dim, bias=False),
+            nn.Sigmoid()
+        )
+        self.fc_k = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(embed_dim // reduction, embed_dim, bias=False),
+            nn.Sigmoid()
+        )
+        self.fc_o = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(embed_dim // reduction, embed_dim, bias=False),
             nn.Sigmoid()
         )
 
@@ -161,56 +173,18 @@ class FirstSEMultiheadAttention(nn.Module):
         x = query
         b, t, _ = x.size()
         first_f = x[:, 0, :]  # shape -> [B, Embedding]
-        scale = self.fc(first_f)  # shape -> [B, Embedding]
 
-        scale = scale.view(b, 1, -1)
+        scale_q = self.fc_q(first_f)  # shape -> [B, Embedding]
+        scale_q = scale_q.view(b, 1, -1)
+        scale_q = scale_q * 2.0
 
+        scale_k = self.fc_k(first_f)  # shape -> [B, Embedding]
+        scale_k = scale_k.view(b, 1, -1)
+        scale_k = scale_k * 2.0
 
-
-
-
-        if (
-            False and
-            self.enable_torch_version
-            and not self.onnx_trace
-            and incremental_state is None
-            and not static_kv
-        ):
-            assert key is not None and value is not None
-            return F.multi_head_attention_forward(
-                query,
-                key,
-                value,
-                self.embed_dim,
-                self.num_heads,
-                torch.empty([0]),
-                torch.cat((self.q_proj.bias, self.k_proj.bias, self.v_proj.bias)),
-                self.bias_k,
-                self.bias_v,
-                self.add_zero_attn,
-                self.dropout,
-                self.out_proj.weight,
-                self.out_proj.bias,
-                self.training,
-                key_padding_mask,
-                need_weights,
-                attn_mask,
-                use_separate_proj_weight=True,
-                q_proj_weight=self.q_proj.weight,
-                k_proj_weight=self.k_proj.weight,
-                v_proj_weight=self.v_proj.weight,
-            )
-
-        if incremental_state is not None:
-            saved_state = self._get_input_buffer(incremental_state)
-            if saved_state is not None and "prev_key" in saved_state:
-                # previous time steps are cached - no need to recompute
-                # key and value if they are static
-                if static_kv:
-                    assert self.encoder_decoder_attention and not self.self_attention
-                    key = value = None
-        else:
-            saved_state = None
+        scale_o = self.fc_o(first_f)  # shape -> [B, Embedding]
+        scale_o = scale_o.view(b, 1, -1)
+        scale_o = scale_o * 2.0  # *1.0 here?
 
         if self.self_attention:
             q = self.q_proj(query)
@@ -233,6 +207,7 @@ class FirstSEMultiheadAttention(nn.Module):
             v = self.v_proj(value)
         q *= self.scaling
 
+
         if self.bias_k is not None:
             assert self.bias_v is not None
             k = torch.cat([k, self.bias_k.repeat(1, bsz, 1)])
@@ -249,6 +224,9 @@ class FirstSEMultiheadAttention(nn.Module):
                     ],
                     dim=1,
                 )
+
+        q = q * scale_q
+        k = k * scale_k
 
         q = (
             q.contiguous()
@@ -268,45 +246,7 @@ class FirstSEMultiheadAttention(nn.Module):
                 .transpose(0, 1)
             )
 
-        if saved_state is not None:
-            # saved states are stored with shape (bsz, num_heads, seq_len, head_dim)
-            if "prev_key" in saved_state:
-                _prev_key = saved_state["prev_key"]
-                assert _prev_key is not None
-                prev_key = _prev_key.view(bsz * self.num_heads, -1, self.head_dim)
-                if static_kv:
-                    k = prev_key
-                else:
-                    assert k is not None
-                    k = torch.cat([prev_key, k], dim=1)
-            if "prev_value" in saved_state:
-                _prev_value = saved_state["prev_value"]
-                assert _prev_value is not None
-                prev_value = _prev_value.view(bsz * self.num_heads, -1, self.head_dim)
-                if static_kv:
-                    v = prev_value
-                else:
-                    assert v is not None
-                    v = torch.cat([prev_value, v], dim=1)
-            prev_key_padding_mask: Optional[Tensor] = None
-            if "prev_key_padding_mask" in saved_state:
-                prev_key_padding_mask = saved_state["prev_key_padding_mask"]
-            assert k is not None and v is not None
-            key_padding_mask = MultiheadAttention._append_prev_key_padding_mask(
-                key_padding_mask=key_padding_mask,
-                prev_key_padding_mask=prev_key_padding_mask,
-                batch_size=bsz,
-                src_len=k.size(1),
-                static_kv=static_kv,
-            )
-
-            saved_state["prev_key"] = k.view(bsz, self.num_heads, -1, self.head_dim)
-            saved_state["prev_value"] = v.view(bsz, self.num_heads, -1, self.head_dim)
-            saved_state["prev_key_padding_mask"] = key_padding_mask
-            # In this branch incremental_state is never None
-            assert incremental_state is not None
-            incremental_state = self._set_input_buffer(incremental_state, saved_state)
-        assert k is not None
+            
         src_len = k.size(1)
 
         # This is part of a workaround to get around fork/join parallelism
@@ -380,13 +320,15 @@ class FirstSEMultiheadAttention(nn.Module):
             attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
 
         # group se
-        attn = attn.view(tgt_len, bsz, self.num_heads, -1)
-        scale = scale.unsqueeze(-1)
-        attn = attn * scale
-        attn = attn.view(tgt_len, bsz, embed_dim)
-
+        # attn = attn.view(tgt_len, bsz, self.num_heads, -1)
+        # scale = scale.unsqueeze(-1)
+        # attn = attn * scale
+        # attn = attn.view(tgt_len, bsz, embed_dim)
 
         attn = self.out_proj(attn)
+
+        attn = attn * scale_o
+
         attn_weights: Optional[Tensor] = None
         if need_weights:
             attn_weights = attn_weights_float.view(
@@ -519,7 +461,7 @@ class TransformerSentenceEncoderLayerWithSoftAttn(nn.Module):
         add_zero_attn: bool = False,
         export: bool = False,
         reduction: int = 16,
-        attn_module = FirstSEMultiheadAttention,
+        attn_module = FirstSEKQOAttention,
     ) -> None:
 
         super().__init__()
@@ -608,7 +550,7 @@ def init_bert_params(module):
         if module.padding_idx is not None:
             module.weight.data[module.padding_idx].zero_()
     #if isinstance(module, MultiheadAttention):
-    if isinstance(module, FirstSEMultiheadAttention):
+    if isinstance(module, FirstSEKQOAttention):
         module.q_proj.weight.data.normal_(mean=0.0, std=0.02)
         module.k_proj.weight.data.normal_(mean=0.0, std=0.02)
         module.v_proj.weight.data.normal_(mean=0.0, std=0.02)
@@ -666,7 +608,7 @@ class TransformerSentenceEncoderWithSoftAttn(nn.Module):
         export: bool = False,
         traceable: bool = False,
         reduction: int = 8,
-        attn_module = FirstSEMultiheadAttention,
+        attn_module = FirstSEKQOAttention,
     ) -> None:
 
         super().__init__()
@@ -807,4 +749,4 @@ class TransformerSentenceEncoderWithSoftAttn(nn.Module):
 
 
 
-soft_attns=[FirstSEMultiheadAttention, ]
+soft_attns=[FirstSEKQOAttention, ]
