@@ -73,6 +73,8 @@ class FirstSEKQOAttention(nn.Module):
         self.num_heads = num_heads
         self.dropout = dropout
         self.head_dim = embed_dim // num_heads
+        self.total_dim = embed_dim
+
         assert (
             self.head_dim * num_heads == self.embed_dim
         ), "embed_dim must be divisible by num_heads"
@@ -230,58 +232,28 @@ class FirstSEKQOAttention(nn.Module):
 
         q = (
             q.contiguous()
-            .view(tgt_len, bsz * self.num_heads, self.head_dim)
-            .transpose(0, 1)
+                .view(tgt_len, bsz, self.total_dim)
+                .transpose(0, 1)
         )
         if k is not None:
             k = (
                 k.contiguous()
-                .view(-1, bsz * self.num_heads, self.head_dim)
-                .transpose(0, 1)
+                    .view(-1, bsz, self.total_dim)
+                    .transpose(0, 1)
             )
         if v is not None:
             v = (
                 v.contiguous()
-                .view(-1, bsz * self.num_heads, self.head_dim)
-                .transpose(0, 1)
+                    .view(-1, bsz, self.total_dim)
+                    .transpose(0, 1)
             )
 
-            
         src_len = k.size(1)
-
-        # This is part of a workaround to get around fork/join parallelism
-        # not supporting Optional types.
-        if key_padding_mask is not None and key_padding_mask.dim() == 0:
-            key_padding_mask = None
-
-        if key_padding_mask is not None:
-            assert key_padding_mask.size(0) == bsz
-            assert key_padding_mask.size(1) == src_len
-
-        if self.add_zero_attn:
-            assert v is not None
-            src_len += 1
-            k = torch.cat([k, k.new_zeros((k.size(0), 1) + k.size()[2:])], dim=1)
-            v = torch.cat([v, v.new_zeros((v.size(0), 1) + v.size()[2:])], dim=1)
-            if attn_mask is not None:
-                attn_mask = torch.cat(
-                    [attn_mask, attn_mask.new_zeros(attn_mask.size(0), 1)], dim=1
-                )
-            if key_padding_mask is not None:
-                key_padding_mask = torch.cat(
-                    [
-                        key_padding_mask,
-                        torch.zeros(key_padding_mask.size(0), 1).type_as(
-                            key_padding_mask
-                        ),
-                    ],
-                    dim=1,
-                )
 
         attn_weights = torch.bmm(q, k.transpose(1, 2))
         attn_weights = MultiheadAttention.apply_sparse_mask(attn_weights, tgt_len, src_len, bsz)
 
-        assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, src_len]
+        assert list(attn_weights.size()) == [bsz, tgt_len, src_len]
 
         if attn_mask is not None:
             attn_mask = attn_mask.unsqueeze(0)
@@ -291,11 +263,11 @@ class FirstSEKQOAttention(nn.Module):
 
         if key_padding_mask is not None:
             # don't attend to padding symbols
-            attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
+            attn_weights = attn_weights.view(bsz, 1, tgt_len, src_len)
             attn_weights = attn_weights.masked_fill(
                 key_padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool), float("-inf")
             )
-            attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+            attn_weights = attn_weights.view(bsz, tgt_len, src_len)
 
         if before_softmax:
             return attn_weights, v
@@ -311,20 +283,14 @@ class FirstSEKQOAttention(nn.Module):
         )
         assert v is not None
         attn = torch.bmm(attn_probs, v)
-        assert list(attn.size()) == [bsz * self.num_heads, tgt_len, self.head_dim]
+        assert list(attn.size()) == [bsz, tgt_len, self.total_dim]
         if self.onnx_trace and attn.size(1) == 1:
             # when ONNX tracing a single decoder step (sequence length == 1)
             # the transpose is a no-op copy before view, thus unnecessary
-            attn = attn.contiguous().view(tgt_len, bsz, embed_dim)
+            attn = attn.contiguous().view(tgt_len, bsz, self.total_dim)
         else:
-            attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
-
-        # group se
-        # attn = attn.view(tgt_len, bsz, self.num_heads, -1)
-        # scale = scale.unsqueeze(-1)
-        # attn = attn * scale
-        # attn = attn.view(tgt_len, bsz, embed_dim)
-
+            attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, self.total_dim)
+        #attn = F.linear(attn, o_weight, o_bias)
         attn = self.out_proj(attn)
 
         attn = attn * scale_o
@@ -332,13 +298,14 @@ class FirstSEKQOAttention(nn.Module):
         attn_weights: Optional[Tensor] = None
         if need_weights:
             attn_weights = attn_weights_float.view(
-                bsz, self.num_heads, tgt_len, src_len
+                bsz, 1, tgt_len, src_len
             ).transpose(1, 0)
             if not need_head_weights:
                 # average attention weights over heads
                 attn_weights = attn_weights.mean(dim=0)
 
         return attn, attn_weights
+
 
     @staticmethod
     def _append_prev_key_padding_mask(
