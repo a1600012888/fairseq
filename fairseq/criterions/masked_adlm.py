@@ -108,10 +108,10 @@ class MaskedAdLmLoss(FairseqCriterion):
                                 torch.ones_like(margin_log_grad)
 
             if self.margin_norm == 'l1':
-                margin_grad = margin_grad_cross + torch.ones_like(m) * self.margin_lambda
+                margin_grad = margin_grad_cross - torch.ones_like(m) * self.margin_lambda
             else:
                 # l2 norm
-                margin_grad = margin_grad_cross + m * self.margin_lambda * 2.0
+                margin_grad = margin_grad_cross - m * self.margin_lambda * 2.0
             margin_update = -1.0 * margin_grad *  self.margin_lr
 
             self.margins.scatter_add_(0, targets.unsqueeze(-1), margin_update.half())
