@@ -55,7 +55,7 @@ if __name__ == '__main__':
     "--max-positions 512 --max-sentences {} ".format(max_sentences[index]),
     "--max-tokens 4400 --task sentence_prediction --reset-optimizer ",
     "--reset-dataloader --reset-meters --required-batch-size-multiple 1 \
-    --init-token 0 --separator-token 2 ",
+    --init-token 0 --separator-token 2 --truncated-sentences ",
     "--arch {} ".format(args.arch),
     "--criterion sentence_prediction ",
     "--num-classes {} ".format(num_classes[index]),
