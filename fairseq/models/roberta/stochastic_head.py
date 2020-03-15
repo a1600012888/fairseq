@@ -1996,7 +1996,7 @@ def init_bert_params(module):
         if module.padding_idx is not None:
             module.weight.data[module.padding_idx].zero_()
     #if isinstance(module, MultiheadAttention):
-    if isinstance(module, StochasticAttentionRandom):
+    if isinstance(module, StochasticAttentionRandom) or isinstance(module, StochasticAttentionLearnedRandom):
         module.q_proj.weight.data.normal_(mean=0.0, std=0.02)
         module.k_proj.weight.data.normal_(mean=0.0, std=0.02)
         module.v_proj.weight.data.normal_(mean=0.0, std=0.02)

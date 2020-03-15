@@ -210,7 +210,8 @@ class RobertaLMHead(nn.Module):
         self.dense = nn.Linear(embed_dim, embed_dim)
         self.activation_fn = utils.get_activation_fn(activation_fn)
         self.layer_norm = LayerNorm(embed_dim)
-        self.weight_norm = LayerNorm(weight.size(-1), elementwise_affine=False)
+        self.weight_norm = LayerNorm(weight.size(-1), elementwise_affine=True)
+        #self.weight_norm = LayerNorm(weight.size(-1), elementwise_affine=False)
 
         if weight is None:
             weight = nn.Linear(embed_dim, output_dim, bias=False).weight
@@ -263,7 +264,7 @@ class RobertaEncoder(FairseqDecoder):
         super().__init__(dictionary)
         self.args = args
 
-        self.mid_layer_idx = self.args.encoder_layers // 2
+
         # RoBERTa is a sentence encoder model, so users will intuitively trim
         # encoder layers. However, the implementation uses the fairseq decoder,
         # so we fix here.
@@ -296,12 +297,7 @@ class RobertaEncoder(FairseqDecoder):
             weight=self.sentence_encoder.embed_tokens.weight,
         )
 
-        self.mid_lm_head = RobertaLMHead(
-            embed_dim=args.encoder_embed_dim,
-            output_dim=len(dictionary),
-            activation_fn=args.activation_fn,
-            weight=self.sentence_encoder.embed_tokens.weight,
-        )
+
 
     def forward(self, src_tokens, features_only=False, return_all_hiddens=False, masked_tokens=None,
                 **unused):
@@ -363,6 +359,12 @@ def base_architecture(args):
 @register_model_architecture('roberta_norm_ml', 'roberta_base_norm_ml')
 def roberta_base_architecture(args):
     base_architecture(args)
+
+@register_model_architecture('roberta_norm_ml', 'roberta_small_norm_ml')
+def roberta_base_architecture(args):
+    args.encoder_layers = getattr(args, 'encoder_layers', 6)
+    base_architecture(args)
+
 
 
 @register_model_architecture('roberta_norm_ml', 'roberta_large_norm_ml')
