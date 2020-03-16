@@ -81,6 +81,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
         """
         # compute MLM loss
         # model.learner model.lm
+
         raw_inps = sample["net_input"]["src_tokens"]
         raw_targets = sample['target']
         raw_masked_tokens = raw_targets.ne(self.padding_idx)
@@ -212,8 +213,10 @@ class MaskLeanerCoLoss(FairseqCriterion):
             new_inp = torch.stack(new_inps, dim=0)
             labels = torch.stack(labels_list, dim=0)
 
-            sample['target'] = labels
-            sample['net_input']["src_tokens"] = new_inp
+            if model.training:
+                sample['target'] = labels
+                sample['net_input']["src_tokens"] = new_inp
+                
         masked_tokens = sample['target'].ne(self.padding_idx)
         sample_size = masked_tokens.int().sum().item()
 
@@ -320,6 +323,8 @@ class MaskLeanerCoLoss(FairseqCriterion):
         masker_loss = masker_loss.sum()
 
         total_loss = masker_loss * self.masker_lambda + loss
+
+
 
         logging_output = {
             'loss': utils.item(loss.data) if reduce else loss.data,
