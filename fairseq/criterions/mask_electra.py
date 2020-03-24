@@ -325,7 +325,7 @@ class MaskerElectraLoss(FairseqCriterion):
             weight_mean = np.sum(weight)
             weight_mean = torch.tensor(weight_mean)
 
-            weight = weight / np.mean(weight)
+            weight = weight / np.sum(weight) * batch_sz
 
             gen_loss_re = gen_loss_b * weight
             gen_loss = np.sum(gen_loss_re)
