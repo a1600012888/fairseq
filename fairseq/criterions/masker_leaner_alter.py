@@ -296,10 +296,14 @@ class MaskLeanerAlterLoss(FairseqCriterion):
             weight_mean = np.sum(weight)
             weight_mean = torch.tensor(weight_mean)
 
-            weight = weight / np.sum(weight) * sample_size
-            #normalize_term = np.mean(weight)
-            #print(normalize_term)
-            #weight = weight / normalize_term
+            a = np.sum(weight)
+            normalize_term = a / sample['nsentences']
+
+            #print(a, normalize_term)
+            if torch.is_tensor(normalize_term):
+                normalize_term = normalize_term.item()
+            weight = weight / normalize_term
+
 
             loss_re = loss_b * weight
             loss = np.sum(loss_re)
