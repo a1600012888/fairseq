@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from fairseq import metrics, utils
 
 from . import FairseqCriterion, register_criterion
+import numpy as np
 
 
 @register_criterion('mask_electra')
