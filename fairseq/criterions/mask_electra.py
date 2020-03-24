@@ -308,6 +308,7 @@ class MaskerElectraLoss(FairseqCriterion):
                 gen_loss_b.append(gen_c)
                 weight.append(torch.exp(p * -1.0))
 
+            idx = 0
             for num in replace_per_sent:
                 disc_c = torch.zeros((1,), device=masker_out1.device)
                 for _ in range(num.item()):
