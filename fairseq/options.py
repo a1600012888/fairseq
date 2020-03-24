@@ -408,6 +408,8 @@ def add_optimization_args(parser):
 def add_checkpoint_args(parser):
     group = parser.add_argument_group("Checkpointing")
     # fmt: off
+    group.add_argument('--keep-updates-list', type=int, nargs='+', default=[], metavar='N',
+                       help='keep the needed checkpoints with --keep-updates-list')
     group.add_argument('--save-dir', metavar='DIR', default='checkpoints',
                        help='path to save checkpoints')
     group.add_argument('--restore-file', default='checkpoint_last.pt',
