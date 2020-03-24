@@ -325,9 +325,14 @@ class MaskerElectraLoss(FairseqCriterion):
             weight_mean = np.sum(weight)
             weight_mean = torch.tensor(weight_mean)
 
+            a = np.sum(weight)
+            normalize_term = a / sample['nsentences']
 
-            weight = weight / np.mean(weight) #* float(batch_sz)
-
+            # print(a, normalize_term)
+            if torch.is_tensor(normalize_term):
+                normalize_term = normalize_term.item()
+            weight = weight / normalize_term
+            
             gen_loss_re = gen_loss_b * weight
             gen_loss = np.sum(gen_loss_re)
             disc_loss_re = disc_loss_b * weight
