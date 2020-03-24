@@ -64,7 +64,7 @@ class ElectraMasker(FairseqLanguageModel):
         parser.add_argument('--generator-size-divider', type=int,
                             help='divider for generator: layer size, FFN size and attention heads')
         parser.add_argument('--masker-size-divider', type=int, default=3,
-                            help='divider for generator: layer size, FFN size and attention heads')
+                            help='divider for masker: layer size, FFN size and attention heads')
         parser.add_argument('--activation-fn',
                             choices=utils.get_available_activation_fns(),
                             help='activation function to use')
