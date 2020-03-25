@@ -212,8 +212,8 @@ class MaskLeanerAlterLoss(FairseqCriterion):
             new_inp = torch.stack(new_inps, dim=0)
             labels = torch.stack(labels_list, dim=0)
 
-            #do_explore = torch.rand(1) > self.explore_prob
-            do_explore = True
+            do_explore = torch.rand(1) < self.explore_prob
+            #do_explore = True
             if model.training and (not do_explore):
                 sample['target'] = labels
                 sample['net_input']["src_tokens"] = new_inp
@@ -275,7 +275,9 @@ class MaskLeanerAlterLoss(FairseqCriterion):
             loss = torch.sum(loss_re)
 
             masker_out = masker_out.view(-1)
+            #print('abc', sample_size)
         else:
+            #print('123', sample_size)
             mask_per_sent = torch.sum(masked_tokens.int(), 1)
             masker_out1 = masker_out.detach()
 
