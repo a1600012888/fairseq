@@ -129,88 +129,43 @@ class MaskLeanerCoLoss(FairseqCriterion):
         labels_list = []
         with torch.no_grad():
 
-            #labels = torch.full_like(inps, self.padding_idx)
-            #labels[masked_idxes] = inps[masked_idxes]
+            labels = torch.full_like(inps, self.padding_idx)
+
+            raw_masked_pos = torch.full_like(inps, False).type(torch.bool)
+
+            x_idx = torch.arange(end=num_mask, device=inps.device)
+            x_idx = x_idx.expand_as(masked_idxes)
 
 
-            rand_or_unmask_prob = self.random_token_prob + self.leave_unmasked_prob
+            raw_masked_tokens[(x_idx, masked_idxes)] = True
 
-            new_inps = []
+            raw_masked_pos[inps == self.padding_idx] = False
 
-            #import IPython
-            #IPython.embed()
-
-            for i in range(inps.size(0)):
-                inp = inps[i]
-                mask = torch.full_like(inp, False).type(torch.bool)
-                mask[masked_idxes[i]] = True
-
-                label = torch.full_like(inp, self.padding_idx)
-                label[masked_idxes[i]] = inp[masked_idxes[i]]
-                labels_list.append(label)
-
-                #import IPython
-                #IPython.embed()
-
-                if rand_or_unmask_prob > 0.0:
-                    tmp_rand = torch.rand_like(inp.type(torch.float))
-                    tmp_rand = (tmp_rand < rand_or_unmask_prob)
-                    #tmp_rand = tmp_rand.to(inp.device)
-                    #tmp_rand = (torch.rand(sz) < rand_or_unmask_prob).to(mask.device)
-                    tmp_rand = tmp_rand.type(mask.type())
-                    rand_or_unmask = mask & tmp_rand
-                    if self.random_token_prob == 0.0:
-                        unmask = rand_or_unmask
-                        rand_mask = None
-                    elif self.leave_unmasked_prob == 0.0:
-                        unmask = None
-                        rand_mask = rand_or_unmask
-                    else:
-                        unmask_prob = self.leave_unmasked_prob / rand_or_unmask_prob
-                        decision = torch.rand_like(inp.type(torch.float))  < unmask_prob
-                        decision = decision.type(mask.type())
-                        unmask = rand_or_unmask & decision
-                        rand_mask = rand_or_unmask & (~decision)
-                else:
-                    unmask = rand_mask = None
-
-                if unmask is not None:
-                    mask = mask ^ unmask
-
-                #if self.mask_whole_words is not None:
-                #    #mask = torch.repeat(mask, word_lens)
-                #    mask = mask.repeat(word_lens)
+            labels[(x_idx, masked_idxes)] = inps[(x_idx, masked_idxes)]
 
 
+            new_masked_inps = inps * (1 - raw_masked_pos) + \
+                              torch.full_like(inps, self.mask_idx) * raw_masked_pos
 
-                new_item = inp.clone()
-                #print('mask, new item', mask.shape, new_item.shape, mask.type(), torch.sum(mask).item())
-                mask_idxs = torch.full_like(new_item, self.mask_idx)
-                new_item = torch.where(mask, mask_idxs, new_item)
-                #new_item[mask] = self.mask_idx
-                if rand_mask is not None:
-                    num_rand_int = rand_mask.sum().item()
-                    num_rand = rand_mask.sum()
 
-                    #print('num_rand', num_rand_int)
-                    if num_rand_int > 0:
-                        #if self.mask_whole_words is not None:
-                        #    #rand_mask = torch.repeat(rand_mask, word_lens)
-                        #    rand_mask = rand_mask.repeat(word_lens)
-                        #    num_rand = rand_mask.sum()
-                        #import IPython
-                        #IPython.embed()
-                        # rand_tensor = torch.tensor(
-                        #     np.random.choice(len(self.vocab),
-                        #                      num_rand.cpu().numpy(),
-                        #                      p=self.weights)).to(mask.device)
-                        rand_tensor = torch.multinomial(self.random_weights.float(), num_rand,  False)
-                        rand_tensor.type(inps.type())
-                        new_item[rand_mask] = rand_tensor
-                new_inps.append(new_item)
+            probs = torch.ones_like(inps)
 
-            new_inp = torch.stack(new_inps, dim=0)
-            labels = torch.stack(labels_list, dim=0)
+            probs[raw_masked_pos] = torch.rand_like(inps)[raw_masked_pos]
+
+            non_masked_pos = probs < self.leave_unmasked_prob
+
+            new_masked_inps[non_masked_pos] = inps[non_masked_pos]
+
+            rand_replace_pos = probs >= self.leave_unmasked_prob & probs < self.rand_or_unmask_prob
+
+            num_gen = rand_replace_pos.long().sum()
+
+            rand_token = torch.multinomial(self.random_weights.float(), num_gen, replacement=True)
+
+            rand_token.type(inps.type)
+            new_masked_inps[rand_replace_pos] = rand_token
+
+            new_inp = new_masked_inps
 
             if model.training:
                 sample['target'] = labels
