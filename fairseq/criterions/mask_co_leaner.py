@@ -126,44 +126,44 @@ class MaskLeanerCoLoss(FairseqCriterion):
                 masked_idxes = torch.multinomial(masker_out.float(), num_mask, replacement=False)
 
 
-        labels_list = []
+
         with torch.no_grad():
 
             labels = torch.full_like(inps, self.padding_idx)
 
             raw_masked_pos = torch.full_like(inps, False).type(torch.bool)
 
-            x_idx = torch.arange(end=num_mask, device=inps.device)
+            x_idx = torch.arange(end=inps.size(0), device=inps.device).unsqueeze(-1)
             x_idx = x_idx.expand_as(masked_idxes)
 
-
-            raw_masked_tokens[(x_idx, masked_idxes)] = True
+            #from IPython import embed
+            #embed()
+            raw_masked_pos[(x_idx, masked_idxes)] = True
 
             raw_masked_pos[inps == self.padding_idx] = False
 
             labels[(x_idx, masked_idxes)] = inps[(x_idx, masked_idxes)]
 
-
-            new_masked_inps = inps * (1 - raw_masked_pos) + \
+            new_masked_inps = inps * raw_masked_pos.logical_not() + \
                               torch.full_like(inps, self.mask_idx) * raw_masked_pos
 
+            probs = torch.ones_like(inps, dtype=torch.float)
 
-            probs = torch.ones_like(inps)
-
-            probs[raw_masked_pos] = torch.rand_like(inps)[raw_masked_pos]
+            probs[raw_masked_pos] = torch.rand_like(inps, dtype=torch.float)[raw_masked_pos]
 
             non_masked_pos = probs < self.leave_unmasked_prob
 
             new_masked_inps[non_masked_pos] = inps[non_masked_pos]
 
-            rand_replace_pos = probs >= self.leave_unmasked_prob & probs < self.rand_or_unmask_prob
+            rand_replace_pos = (probs >= self.leave_unmasked_prob) & (probs < self.rand_or_unmask_prob)
 
             num_gen = rand_replace_pos.long().sum()
 
-            rand_token = torch.multinomial(self.random_weights.float(), num_gen, replacement=True)
+            if num_gen > 0:
+                rand_token = torch.multinomial(self.random_weights.float(), num_gen, replacement=True)
 
-            rand_token.type(inps.type)
-            new_masked_inps[rand_replace_pos] = rand_token
+                rand_token.type(inps.type())
+                new_masked_inps[rand_replace_pos] = rand_token
 
             new_inp = new_masked_inps
 
