@@ -3,7 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 """
-ElECTRA: PRE...
+ELECTRA: PRE-TRAINING TEXT ENCODERS AS DISCRIMINATORS RATHER THAN GENERATORS
 """
 
 import torch
@@ -342,7 +342,7 @@ class GeneratorEncoder(FairseqDecoder):
             src_tokens,
             last_state_only=not return_all_hiddens,
         )
-        features = inner_states[-1].transpose(0,1)
+        features = inner_states[-1]
         return features, {'inner_states': inner_states if return_all_hiddens else None}
 
     def output_layer(self, features, masked_tokens=None, **unused):
@@ -411,7 +411,7 @@ class DiscEncoder(FairseqDecoder):
             src_tokens,
             last_state_only=not return_all_hiddens,
         )
-        features = inner_states[-1].transpose(0,1)
+        features = inner_states[-1]
         return features, {'inner_states': inner_states if return_all_hiddens else None}
 
     def output_layer(self, features, masked_tokens=None, **unused):

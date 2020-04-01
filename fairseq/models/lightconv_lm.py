@@ -101,9 +101,9 @@ class LightConvLanguageModel(FairseqLanguageModel):
         # make sure all arguments are present in older models
         base_lm_architecture(args)
 
-        if getattr(args, 'max_source_positions', None) is None:
+        if not hasattr(args, 'max_source_positions'):
             args.max_source_positions = args.tokens_per_sample
-        if getattr(args, 'max_target_positions', None) is None:
+        if not hasattr(args, 'max_target_positions'):
             args.max_target_positions = args.tokens_per_sample
 
         if args.character_embeddings:
@@ -145,7 +145,6 @@ def base_lm_architecture(args):
 
     args.decoder_output_dim = getattr(args, 'decoder_output_dim', args.decoder_embed_dim)
     args.decoder_input_dim = getattr(args, 'decoder_input_dim', args.decoder_embed_dim)
-    args.decoder_conv_dim = getattr(args, 'decoder_conv_dim', args.decoder_embed_dim)
 
     # The model training is not stable without this
     args.decoder_normalize_before = True
@@ -160,10 +159,6 @@ def base_lm_architecture(args):
     args.decoder_kernel_size_list = getattr(args, 'decoder_kernel_size_list', [3, 7, 15, 31, 31, 31])
     if len(args.decoder_kernel_size_list) == 1:
         args.decoder_kernel_size_list = args.decoder_kernel_size_list * args.decoder_layers
-    assert len(args.decoder_kernel_size_list) == args.decoder_layers, "decoder_kernel_size_list doesn't match decoder_layers"
-    args.decoder_glu = getattr(args, 'decoder_glu', True)
-    args.input_dropout = getattr(args, 'input_dropout', 0.1)
-    args.weight_dropout = getattr(args, 'weight_dropout', args.attention_dropout)
 
 
 @register_model_architecture('lightconv_lm', 'lightconv_lm_gbw')

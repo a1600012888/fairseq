@@ -13,7 +13,7 @@ from fairseq.data import data_utils, Dictionary
 from . import BaseWrapperDataset, LRUCacheDataset
 
 
-class ElectraDataset(BaseWrapperDataset):
+class MaskTokensDataset2(BaseWrapperDataset):
     """
     A wrapper Dataset for masked language modeling.
 
@@ -124,10 +124,6 @@ class ElectraDataset(BaseWrapperDataset):
             if self.return_masked_tokens:
                 # exit early if we're just returning the masked tokens
                 # (i.e., the targets for masked LM training)
-                # if self.mask_whole_words is not None:
-                #     mask = np.repeat(mask, word_lens)
-                # new_item = np.full(len(mask), self.pad_idx)
-                # new_item[mask] = item[torch.from_numpy(mask.astype(np.uint8)) == 1]
                 new_item = np.copy(item)
                 return torch.from_numpy(new_item)
 

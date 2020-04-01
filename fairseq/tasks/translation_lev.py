@@ -3,11 +3,8 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-import os
-
 import torch
 
-from fairseq.utils import new_arange
 from fairseq.tasks import register_task
 from fairseq.tasks.translation import TranslationTask, load_langpair_dataset
 
@@ -35,7 +32,7 @@ class TranslationLevenshteinTask(TranslationTask):
         Args:
             split (str): name of the split (e.g., train, valid, test)
         """
-        paths = self.args.data.split(os.pathsep)
+        paths = self.args.data.split(':')
         assert len(paths) > 0
         data_path = paths[epoch % len(paths)]
 
@@ -90,19 +87,14 @@ class TranslationLevenshteinTask(TranslationTask):
             eos = self.tgt_dict.eos()
             unk = self.tgt_dict.unk()
 
-            target_masks = target_tokens.ne(pad) & \
-                           target_tokens.ne(bos) & \
-                           target_tokens.ne(eos)
+            target_mask = target_tokens.eq(bos) | target_tokens.eq(
+                eos) | target_tokens.eq(pad)
             target_score = target_tokens.clone().float().uniform_()
-            target_score.masked_fill_(~target_masks, 2.0)
-            target_length = target_masks.sum(1).float()
-            target_length = target_length * target_length.clone().uniform_()
-            target_length = target_length + 1  # make sure to mask at least one token.
+            target_score.masked_fill_(target_mask, 1.0)
 
-            _, target_rank = target_score.sort(1)
-            target_cutoff = new_arange(target_rank) < target_length[:, None].long()
             prev_target_tokens = target_tokens.masked_fill(
-                target_cutoff.scatter(1, target_rank, target_cutoff), unk)
+                target_score < target_score.new_zeros(target_score.size(0),
+                                                      1).uniform_(), unk)
             return prev_target_tokens
 
         def _full_mask(target_tokens):
@@ -132,11 +124,8 @@ class TranslationLevenshteinTask(TranslationTask):
             self.target_dictionary,
             eos_penalty=getattr(args, 'iter_decode_eos_penalty', 0.0),
             max_iter=getattr(args, 'iter_decode_max_iter', 10),
-            beam_size=getattr(args, 'iter_decode_with_beam', 1),
-            reranking=getattr(args, 'iter_decode_with_external_reranker', False),
             decoding_format=getattr(args, 'decoding_format', None),
-            adaptive=not getattr(args, 'iter_decode_force_max_iter', False),
-            retain_history=getattr(args, 'retain_iter_history', False))
+            adaptive=not getattr(args, 'iter_decode_force_max_iter', False))
 
     def train_step(self,
                    sample,

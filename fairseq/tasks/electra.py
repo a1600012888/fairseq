@@ -13,7 +13,7 @@ from fairseq.data import (
     Dictionary,
     encoders,
     IdDataset,
-    ElectraDataset,
+    MaskTokensDataset2,
     NestedDictionaryDataset,
     NumelDataset,
     NumSamplesDataset,
@@ -64,6 +64,7 @@ class ElectraTask(FairseqTask):
 
         # add mask token
         self.mask_idx = dictionary.add_symbol('<mask>')
+        self.neither_idx = dictionary.add_symbol('<neither>')
 
     @classmethod
     def setup_task(cls, args, **kwargs):
@@ -130,7 +131,7 @@ class ElectraTask(FairseqTask):
         else:
             mask_whole_words = None
 
-        src_dataset, tgt_dataset = ElectraDataset.apply_mask(
+        src_dataset, tgt_dataset = MaskTokensDataset2.apply_mask(
             dataset,
             self.source_dictionary,
             pad_idx=self.source_dictionary.pad(),

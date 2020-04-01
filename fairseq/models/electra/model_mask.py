@@ -90,8 +90,7 @@ class ElectraMasker(FairseqLanguageModel):
         parser.add_argument('--debug', action='store_true',
                             help='trigger for pdb')
         # args for "Reducing Transformer Depth on Demand with Structured Dropout" (Fan et al., 2019)
-        parser.add_argument('--encoder-layerdrop', type=float, metavar='D', default=0,
-                            help='LayerDrop probability for encoder')
+
         parser.add_argument('--encoder-layers-to-keep', default=None,
                             help='which layers to *keep* when pruning as a comma-separated list')
 
@@ -261,7 +260,6 @@ class MaskerEncoder(FairseqDecoder):
             dropout=args.dropout,
             attention_dropout=args.attention_dropout,
             activation_dropout=args.activation_dropout,
-            layerdrop=args.encoder_layerdrop,
             max_seq_len=args.max_positions,
             num_segments=0,
             encoder_normalize_before=True,
@@ -302,7 +300,8 @@ class MaskerEncoder(FairseqDecoder):
             src_tokens,
             last_state_only=not return_all_hiddens,
         )
-        features = inner_states[-1].transpose(0, 1)  # T x B x C -> B x T x C
+        features = inner_states[-1]#.transpose(0, 1)  # T x B x C -> B x T x C
+        #print(features.shape)
         return features, {'inner_states': inner_states if return_all_hiddens else None}
 
     def output_layer(self, features, **unused):
@@ -457,7 +456,7 @@ class GeneratorEncoder(FairseqDecoder):
             src_tokens,
             last_state_only=not return_all_hiddens,
         )
-        features = inner_states[-1].transpose(0, 1)
+        features = inner_states[-1]#.transpose(0, 1)
         return features, {'inner_states': inner_states if return_all_hiddens else None}
 
     def output_layer(self, features, masked_tokens=None, **unused):
@@ -526,7 +525,7 @@ class DiscEncoder(FairseqDecoder):
             src_tokens,
             last_state_only=not return_all_hiddens,
         )
-        features = inner_states[-1].transpose(0,1)
+        features = inner_states[-1]#.transpose(0,1)
         return features, {'inner_states': inner_states if return_all_hiddens else None}
 
     def output_layer(self, features, masked_tokens=None, **unused):

@@ -9,35 +9,23 @@ Data pre-processing: build vocabularies and binarize training data.
 
 from collections import Counter
 from itertools import zip_longest
-import logging
-from multiprocessing import Pool
-import os
-import shutil
-import sys
 
 from fairseq import options, tasks, utils
 from fairseq.data import indexed_dataset
 from fairseq.binarizer import Binarizer
+from multiprocessing import Pool
 
-
-logging.basicConfig(
-    format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    level=logging.INFO,
-    stream=sys.stdout,
-)
-logger = logging.getLogger('fairseq_cli.preprocess')
+import os
+import shutil
 
 
 def main(args):
     utils.import_user_module(args)
 
-    os.makedirs(args.destdir, exist_ok=True)
+    print(args)
 
-    logger.addHandler(logging.FileHandler(
-        filename=os.path.join(args.destdir, 'preprocess.log'),
-    ))
-    logger.info(args)
+    os.makedirs(args.destdir, exist_ok=True)
+    target = not args.only_source
 
     task = tasks.get_task(args.task)
 
@@ -65,8 +53,6 @@ def main(args):
             nwords=args.nwordssrc if src else args.nwordstgt,
             padding_factor=args.padding_factor,
         )
-
-    target = not args.only_source
 
     if not args.srcdict and os.path.exists(dict_path(args.source_lang)):
         raise FileExistsError(dict_path(args.source_lang))
@@ -108,7 +94,7 @@ def main(args):
         tgt_dict.save(dict_path(args.target_lang))
 
     def make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers):
-        logger.info("[{}] Dictionary: {} types".format(lang, len(vocab) - 1))
+        print("| [{}] Dictionary: {} types".format(lang, len(vocab) - 1))
         n_seq_tok = [0, 0]
         replaced = Counter()
 
@@ -160,8 +146,8 @@ def main(args):
 
         ds.finalize(dataset_dest_file(args, output_prefix, lang, "idx"))
 
-        logger.info(
-            "[{}] {}: {} sents, {} tokens, {:.3}% replaced by {}".format(
+        print(
+            "| [{}] {}: {} sents, {} tokens, {:.3}% replaced by {}".format(
                 lang,
                 input_file,
                 n_seq_tok[0],
@@ -218,8 +204,8 @@ def main(args):
 
         ds.finalize(dataset_dest_file(args, output_prefix, None, "idx"))
 
-        logger.info(
-            "[alignments] {}: parsed {} alignments".format(
+        print(
+            "| [alignments] {}: parsed {} alignments".format(
                 input_file,
                 nseq[0]
             )
@@ -262,7 +248,7 @@ def main(args):
     if args.align_suffix:
         make_all_alignments()
 
-    logger.info("Wrote preprocessed data to {}".format(args.destdir))
+    print("| Wrote preprocessed data to {}".format(args.destdir))
 
     if args.alignfile:
         assert args.trainpref, "--trainpref must be set if --alignfile is specified"

@@ -8,8 +8,9 @@ import math
 import torch
 import torch.nn.functional as F
 
-from fairseq import metrics, utils
-from fairseq.criterions import FairseqCriterion, register_criterion
+from fairseq import utils
+
+from . import FairseqCriterion, register_criterion
 
 
 @register_criterion('sentence_ranking')
@@ -31,9 +32,6 @@ class SentenceRankingCriterion(FairseqCriterion):
         # fmt: off
         parser.add_argument('--save-predictions', metavar='FILE',
                             help='file to save predictions to')
-        parser.add_argument('--ranking-head-name',
-                            default='sentence_classification_head',
-                            help='name of the ranking head to use')
         # fmt: on
 
     def forward(self, model, sample, reduce=True):
@@ -44,16 +42,11 @@ class SentenceRankingCriterion(FairseqCriterion):
         2) the sample size, which is used as the denominator for the gradient
         3) logging outputs to display while training
         """
-        assert (
-            hasattr(model, 'classification_heads')
-            and self.args.ranking_head_name in model.classification_heads
-        ), 'model must provide sentence ranking head for --criterion=sentence_ranking'
-
         scores = []
         for idx in range(self.args.num_classes):
             score, _ = model(
                 **sample['net_input{idx}'.format(idx=idx+1)],
-                classification_head_name=self.args.ranking_head_name,
+                classification_head_name='sentence_classification_head',
             )
             scores.append(score)
 
@@ -87,31 +80,30 @@ class SentenceRankingCriterion(FairseqCriterion):
             'sample_size': sample_size,
         }
         if targets is not None:
-            logging_output['ncorrect'] = utils.item((logits.argmax(dim=1) == targets).sum())
-
+            logging_output.update(
+                ncorrect=(logits.max(dim=1)[1] == targets).sum().item()
+            )
         return loss, sample_size, logging_output
 
     @staticmethod
-    def reduce_metrics(logging_outputs) -> None:
+    def aggregate_logging_outputs(logging_outputs):
         """Aggregate logging outputs from data parallel training."""
         loss_sum = sum(log.get('loss', 0) for log in logging_outputs)
         ntokens = sum(log.get('ntokens', 0) for log in logging_outputs)
         nsentences = sum(log.get('nsentences', 0) for log in logging_outputs)
         sample_size = sum(log.get('sample_size', 0) for log in logging_outputs)
 
-        metrics.log_scalar('loss', loss_sum / sample_size / math.log(2), sample_size, round=3)
-        if sample_size != ntokens:
-            metrics.log_scalar('nll_loss', loss_sum / ntokens / math.log(2), ntokens, round=3)
+        agg_output = {
+            'loss': loss_sum / sample_size / math.log(2),
+            'ntokens': ntokens,
+            'nsentences': nsentences,
+            'sample_size': sample_size,
+        }
 
         if len(logging_outputs) > 0 and 'ncorrect' in logging_outputs[0]:
             ncorrect = sum(log.get('ncorrect', 0) for log in logging_outputs)
-            metrics.log_scalar('accuracy', 100.0 * ncorrect / nsentences, nsentences, round=1)
+            agg_output.update(accuracy=ncorrect/nsentences)
 
-    @staticmethod
-    def logging_outputs_can_be_summed() -> bool:
-        """
-        Whether the logging outputs returned by `forward` can be summed
-        across workers prior to calling `reduce_metrics`. Setting this
-        to True will improves distributed training speed.
-        """
-        return True
+        if sample_size != ntokens:
+            agg_output['nll_loss'] = loss_sum / ntokens / math.log(2)
+        return agg_output

@@ -32,7 +32,7 @@ def get_parser():
     return parser
 
 
-def cli_main():
+def main():
     parser = get_parser()
     args = parser.parse_args()
     print(args)
@@ -85,4 +85,4 @@ def cli_main():
 
 
 if __name__ == '__main__':
-    cli_main()
+    main()

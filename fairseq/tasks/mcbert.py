@@ -13,7 +13,7 @@ from fairseq.data import (
     Dictionary,
     encoders,
     IdDataset,
-    MaskTokensDataset,
+    MaskTokensDataset2,
     NestedDictionaryDataset,
     NumelDataset,
     NumSamplesDataset,
@@ -25,8 +25,8 @@ from fairseq.data import (
 from fairseq.tasks import FairseqTask, register_task
 
 
-@register_task('masked_lm')
-class MaskedLMTask(FairseqTask):
+@register_task('mcbert')
+class McbertTask(FairseqTask):
     """Task for training masked language models (e.g., BERT, RoBERTa)."""
 
     @staticmethod
@@ -46,15 +46,15 @@ class MaskedLMTask(FairseqTask):
                                  'per sample for BERT dataset')
         parser.add_argument('--mask-prob', default=0.15, type=float,
                             help='probability of replacing a token with mask')
-        parser.add_argument('--leave-unmasked-prob', default=0.1, type=float,
+        parser.add_argument('--leave-unmasked-prob', default=0.0, type=float,
                             help='probability that a masked token is unmasked')
-        parser.add_argument('--random-token-prob', default=0.1, type=float,
+        parser.add_argument('--random-token-prob', default=0.0, type=float,
                             help='probability of replacing a token with a random token')
         parser.add_argument('--freq-weighted-replacement', action='store_true',
                             help='sample random replacement words based on word frequencies')
         parser.add_argument('--mask-whole-words', default=False, action='store_true',
                             help='mask whole words; you may also want to set --bpe')
-        parser.add_argument('--loss-lamda', default=10.0, type=float,
+        parser.add_argument('--loss-lamda', default=50.0, type=float,
                             help='lamda trade-off between generator loss and discriminator loss')
 
     def __init__(self, args, dictionary):
@@ -64,6 +64,7 @@ class MaskedLMTask(FairseqTask):
 
         # add mask token
         self.mask_idx = dictionary.add_symbol('<mask>')
+        self.neither_idx = dictionary.add_symbol('<neither>')
 
     @classmethod
     def setup_task(cls, args, **kwargs):
@@ -130,7 +131,7 @@ class MaskedLMTask(FairseqTask):
         else:
             mask_whole_words = None
 
-        src_dataset, tgt_dataset = MaskTokensDataset.apply_mask(
+        src_dataset, tgt_dataset = MaskTokensDataset2.apply_mask(
             dataset,
             self.source_dictionary,
             pad_idx=self.source_dictionary.pad(),

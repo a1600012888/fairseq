@@ -6,11 +6,10 @@
 import math
 
 import torch.nn.functional as F
-import torch
+from fairseq import utils
 from torch import Tensor
 
-from fairseq import metrics, utils
-from fairseq.criterions import FairseqCriterion, register_criterion
+from . import FairseqCriterion, register_criterion
 
 
 @register_criterion("nat_loss")
@@ -45,33 +44,29 @@ class LabelSmoothedDualImitationCriterion(FairseqCriterion):
                 if dim is None
                 else x.float().mean(dim).type_as(x)
             )
+
         if masks is not None:
             outputs, targets = outputs[masks], targets[masks]
 
-        if masks is not None and not masks.any():
-            nll_loss = torch.tensor(0)
-            loss = nll_loss
+        logits = F.log_softmax(outputs, dim=-1)
+        if targets.dim() == 1:
+            losses = F.nll_loss(logits, targets, reduction="none")
+
+        else:  # soft-labels
+            losses = F.kl_div(logits, targets, reduction="none")
+            losses = losses.float().sum(-1).type_as(losses)
+
+        nll_loss = mean_ds(losses)
+        if label_smoothing > 0:
+            loss = nll_loss * (1 - label_smoothing) - mean_ds(logits) * label_smoothing
         else:
-            logits = F.log_softmax(outputs, dim=-1)
-            if targets.dim() == 1:
-                losses = F.nll_loss(logits, targets.to(logits.device), reduction='none')
-
-            else:  # soft-labels
-                losses = F.kl_div(logits, targets.to(logits.device), reduction='none')
-                losses = losses.sum(-1)
-
-            nll_loss = mean_ds(losses)
-            if label_smoothing > 0:
-                loss = nll_loss * (
-                    1 - label_smoothing) - mean_ds(logits) * label_smoothing
-            else:
-                loss = nll_loss
+            loss = nll_loss
 
         loss = loss * factor
         return {"name": name, "loss": loss, "nll_loss": nll_loss, "factor": factor}
 
-    def _custom_loss(self, loss, name="loss", factor=1.0):
-        return {"name": name, "loss": loss, "factor": factor}
+    def _custom_loss(self, loss, name="loss"):
+        return {"name": name, "loss": loss, "factor": 1}
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -90,34 +85,59 @@ class LabelSmoothedDualImitationCriterion(FairseqCriterion):
         tgt_tokens, prev_output_tokens = sample["target"], sample["prev_target"]
 
         outputs = model(src_tokens, src_lengths, prev_output_tokens, tgt_tokens)
-        losses, nll_loss = [], []
+        losses = []
+        if "mask_ins_out" in outputs:
+            mask_ins_losses = self._compute_loss(
+                outputs["mask_ins_out"],
+                outputs["mask_ins_tgt"],
+                outputs["mask_ins_mask"],
+                name="m_ins-loss",
+                factor=1 if "mask_ins_w" not in outputs else outputs["mask_ins_w"],
+            )
+            losses += [mask_ins_losses]
 
-        for obj in outputs:
-            if outputs[obj].get("loss", None) is None:
-                _losses = self._compute_loss(
-                    outputs[obj].get("out"),
-                    outputs[obj].get("tgt"),
-                    outputs[obj].get("mask", None),
-                    outputs[obj].get("ls", 0.0),
-                    name=obj + '-loss',
-                    factor=outputs[obj].get("factor", 1.0)
-                )
-            else:
-                _losses = self._custom_loss(
-                    outputs[obj].get("loss"),
-                    name=obj + '-loss',
-                    factor=outputs[obj].get("factor", 1.0)
-                )
+        if "word_ins_out" in outputs:
+            word_ins_losses = self._compute_loss(
+                outputs["word_ins_out"],
+                outputs["word_ins_tgt"],
+                outputs["word_ins_mask"],
+                self.args.label_smoothing,
+                name="w_ins-loss",
+                factor=1 if "word_ins_w" not in outputs else outputs["word_ins_w"],
+            )
 
-            losses += [_losses]
-            if outputs[obj].get("nll_loss", False):
-                nll_loss += [_losses.get("nll_loss", 0.0)]
+            losses += [word_ins_losses]
+            nll_loss = word_ins_losses["nll_loss"]
+
+        if "word_del_out" in outputs:
+            word_del_losses = self._compute_loss(
+                outputs["word_del_out"],
+                outputs["word_del_tgt"],
+                outputs["word_del_mask"],
+                0.01,
+                name="w_del-loss",
+                factor=1 if "word_del_w" not in outputs else outputs["word_del_w"],
+            )
+
+            losses += [word_del_losses]
+
+        if "length_out" in outputs:
+            length_losses = self._compute_loss(
+                outputs["length_out"],
+                outputs["length_tgt"],
+                name="len-loss",
+                factor=1 if "length_w" not in outputs else outputs["length_w"],
+            )
+
+            losses += [length_losses]
+
+        for w in outputs:
+            if "-loss" in w:
+                losses += [self._custom_loss(outputs[w], w)]
 
         loss = sum(l["loss"] for l in losses)
-        nll_loss = sum(l for l in nll_loss) if len(nll_loss) > 0 \
-            else loss.new_tensor(0)
 
-        # NOTE:
+        # NOTE: as we are summing up per token mlm loss and per sentence nsp loss
         # we don't need to use sample_size as denominator for the gradient
         # here sample_size is just used for logging
         sample_size = 1
@@ -139,31 +159,32 @@ class LabelSmoothedDualImitationCriterion(FairseqCriterion):
         return loss, sample_size, logging_output
 
     @staticmethod
-    def reduce_metrics(logging_outputs) -> None:
+    def aggregate_logging_outputs(logging_outputs):
         """Aggregate logging outputs from data parallel training."""
+        ntokens = sum(log.get("ntokens", 0) for log in logging_outputs)
+        nsentences = sum(log.get("nsentences", 0) for log in logging_outputs)
         sample_size = sum(log.get("sample_size", 0) for log in logging_outputs)
         loss = sum(log.get("loss", 0) for log in logging_outputs)
         nll_loss = sum(log.get("nll_loss", 0) for log in logging_outputs)
 
-        metrics.log_scalar('loss', loss / sample_size / math.log(2), sample_size, round=3)
-        metrics.log_scalar('nll_loss', nll_loss / sample_size / math.log(2), sample_size, round=3)
-        metrics.log_derived('ppl', lambda meters: round(2**meters['nll_loss'].avg, 3))
+        results = {
+            "loss": loss / sample_size / math.log(2) if sample_size > 0 else 0.0,
+            "nll_loss": nll_loss / sample_size / math.log(2)
+            if sample_size > 0
+            else 0.0,
+            "ntokens": ntokens,
+            "nsentences": nsentences,
+            "sample_size": sample_size,
+        }
 
         for key in logging_outputs[0]:
             if key[-5:] == "-loss":
-                val = sum(log.get(key, 0) for log in logging_outputs)
-                metrics.log_scalar(
-                    key[:-5],
-                    val / sample_size / math.log(2) if sample_size > 0 else 0.0,
-                    sample_size,
-                    round=3,
+                results[key[:-5]] = (
+                    sum(log.get(key, 0) for log in logging_outputs)
+                    / sample_size
+                    / math.log(2)
+                    if sample_size > 0
+                    else 0.0
                 )
 
-    @staticmethod
-    def logging_outputs_can_be_summed() -> bool:
-        """
-        Whether the logging outputs returned by `forward` can be summed
-        across workers prior to calling `reduce_metrics`. Setting this
-        to True will improves distributed training speed.
-        """
-        return True
+        return results

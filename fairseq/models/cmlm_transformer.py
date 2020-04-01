@@ -10,9 +10,9 @@ Ghazvininejad, Marjan, et al.
 arXiv preprint arXiv:1904.09324 (2019).
 """
 
+import torch
 from fairseq.models import register_model, register_model_architecture
-from fairseq.models.nat import NATransformerModel
-from fairseq.utils import new_arange
+from fairseq.models.nonautoregressive_transformer import NATransformerModel
 
 
 def _skeptical_unmasking(output_scores, output_masks, p):
@@ -20,7 +20,10 @@ def _skeptical_unmasking(output_scores, output_masks, p):
     boundary_len = (
         (output_masks.sum(1, keepdim=True).type_as(output_scores) - 2) * p
     ).long()
-    skeptical_mask = new_arange(output_masks) < boundary_len
+    skeptical_mask = (
+        torch.arange(output_masks.size(1), device=output_masks.device)[None, :]
+        < boundary_len
+    )
     return skeptical_mask.scatter(1, sorted_index, skeptical_mask)
 
 
@@ -35,52 +38,39 @@ class CMLMNATransformerModel(NATransformerModel):
     ):
         assert not self.decoder.src_embedding_copy, "do not support embedding copy."
 
-        # encoding
         encoder_out = self.encoder(src_tokens, src_lengths=src_lengths, **kwargs)
-        # length prediction
-        length_out = self.decoder.forward_length(normalize=False, encoder_out=encoder_out)
-        length_tgt = self.decoder.forward_length_prediction(length_out, encoder_out, tgt_tokens)
+        length_out, length_tgt = self.decoder.forward_length_prediction(
+            encoder_out, tgt_tokens
+        )
 
-        # decoding
-        word_ins_out = self.decoder(
-            normalize=False,
-            prev_output_tokens=prev_output_tokens,
-            encoder_out=encoder_out)
+        word_ins_out, word_ins_tgt, _ = self.decoder(
+            prev_output_tokens, encoder_out=encoder_out, tgt_tokens=tgt_tokens
+        )
         word_ins_mask = prev_output_tokens.eq(self.unk)
-
         return {
-            "word_ins": {
-                "out": word_ins_out, "tgt": tgt_tokens,
-                "mask": word_ins_mask, "ls": self.args.label_smoothing,
-                "nll_loss": True
-            },
-            "length": {
-                "out": length_out, "tgt": length_tgt,
-                "factor": self.decoder.length_loss_factor
-            }
+            "word_ins_out": word_ins_out,
+            "word_ins_tgt": word_ins_tgt,
+            "word_ins_mask": word_ins_mask,
+            "length_out": length_out,
+            "length_tgt": length_tgt,
+            "length_w": self.decoder.length_loss_factor,
         }
 
     def forward_decoder(self, decoder_out, encoder_out, decoding_format=None, **kwargs):
 
-        step = decoder_out.step
-        max_step = decoder_out.max_step
+        step = decoder_out["step"]
+        max_step = decoder_out["max_step"]
 
-        output_tokens = decoder_out.output_tokens
-        output_scores = decoder_out.output_scores
-        history = decoder_out.history
+        output_tokens = decoder_out["output_tokens"]
+        output_scores = decoder_out["output_scores"]
 
         # execute the decoder
         output_masks = output_tokens.eq(self.unk)
         _scores, _tokens = self.decoder(
-            normalize=True,
-            prev_output_tokens=output_tokens,
-            encoder_out=encoder_out,
-        ).max(-1)
+            output_tokens, encoder_out=encoder_out, decoding_format=decoding_format
+        )
         output_tokens.masked_scatter_(output_masks, _tokens[output_masks])
         output_scores.masked_scatter_(output_masks, _scores[output_masks])
-
-        if history is not None:
-            history.append(output_tokens.clone())
 
         # skeptical decoding (depend on the maximum decoding steps.)
         if (step + 1) < max_step:
@@ -91,19 +81,11 @@ class CMLMNATransformerModel(NATransformerModel):
             output_tokens.masked_fill_(skeptical_mask, self.unk)
             output_scores.masked_fill_(skeptical_mask, 0.0)
 
-            if history is not None:
-                history.append(output_tokens.clone())
-
-        return decoder_out._replace(
-            output_tokens=output_tokens,
-            output_scores=output_scores,
-            attn=None,
-            history=history
-        )
+        return {"output_tokens": output_tokens, "output_scores": output_scores}
 
 
 @register_model_architecture("cmlm_transformer", "cmlm_transformer")
-def cmlm_base_architecture(args):
+def base_architecture(args):
     args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 2048)
@@ -150,5 +132,5 @@ def cmlm_base_architecture(args):
 
 
 @register_model_architecture("cmlm_transformer", "cmlm_transformer_wmt_en_de")
-def cmlm_wmt_en_de(args):
-    cmlm_base_architecture(args)
+def iter_nat_wmt_en_de(args):
+    base_architecture(args)

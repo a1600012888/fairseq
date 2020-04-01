@@ -19,8 +19,9 @@ ls ~ -alh
 echo 'Start Training'
 python3 train.py --fp16 ${DATA_DIR} --ddp-backend=no_c10d \
     --distributed-no-spawn \
-    --task masked_lm  --criterion mask_leaner_alter --masker_lambda 3e-8 --masker_m -1.0 --masker_op_name 'identity'   \
-    --arch roberta_leaner  --sample-break-mode complete --tokens-per-sample ${TOKENS_PER_SAMPLE} \
+    --num-workers 4 --task electra --criterion electra_mask --loss-lamda 50.0 --mask-prob 0.15 \
+    --embedding-normalize --generator-size-divider 3 \
+    --arch electra_base_masker --sample-break-mode complete --tokens-per-sample ${TOKENS_PER_SAMPLE} \
     --optimizer adam --adam-betas '(0.9, 0.98)' --adam-eps 1e-6 --clip-norm 10.0 \
     --lr-scheduler polynomial_decay --lr ${PEAK_LR} --warmup-updates ${WARMUP_UPDATES} --total-num-update ${TOTAL_UPDATES} \
     --dropout 0.1 --attention-dropout 0.1 --activation-dropout 0.1 --weight-decay 0.01 \

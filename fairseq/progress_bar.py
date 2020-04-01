@@ -8,20 +8,15 @@ Wrapper around various loggers and progress bars (e.g., tqdm).
 """
 
 from collections import OrderedDict
-from contextlib import contextmanager
 import json
-import logging
 from numbers import Number
 import os
 import sys
 
-import torch
-
 from fairseq import distributed_utils
 from fairseq.meters import AverageMeter, StopwatchMeter, TimeMeter
 
-
-logger = logging.getLogger(__name__)
+g_tbmf_wrapper = None
 
 
 def build_progress_bar(args, iterator, epoch=None, prefix=None, default='tqdm', no_progress_bar='none'):
@@ -42,14 +37,17 @@ def build_progress_bar(args, iterator, epoch=None, prefix=None, default='tqdm', 
     else:
         raise ValueError('Unknown log format: {}'.format(args.log_format))
 
-    if args.tensorboard_logdir and distributed_utils.is_master(args):
-        try:
-            # [FB only] custom wrapper for TensorBoard
-            import palaas  # noqa
-            from fairseq.fb_tbmf_wrapper import fb_tbmf_wrapper
-            bar = fb_tbmf_wrapper(bar, args, args.log_interval)
-        except ImportError:
-            bar = tensorboard_log_wrapper(bar, args.tensorboard_logdir, args)
+    if args.tbmf_wrapper and distributed_utils.is_master(args):
+        global g_tbmf_wrapper
+        if g_tbmf_wrapper is None:
+            try:
+                from fairseq.fb_tbmf_wrapper import fb_tbmf_wrapper
+            except Exception:
+                raise ImportError("fb_tbmf_wrapper package not found.")
+            g_tbmf_wrapper = fb_tbmf_wrapper
+        bar = g_tbmf_wrapper(bar, args, args.log_interval)
+    elif args.tensorboard_logdir and distributed_utils.is_master(args):
+        bar = tensorboard_log_wrapper(bar, args.tensorboard_logdir, args)
 
     return bar
 
@@ -63,8 +61,6 @@ def format_stat(stat):
         stat = '{:g}'.format(round(stat.avg))
     elif isinstance(stat, StopwatchMeter):
         stat = '{:g}'.format(round(stat.sum))
-    elif torch.is_tensor(stat):
-        stat = stat.tolist()
     return stat
 
 
@@ -76,7 +72,7 @@ class progress_bar(object):
         self.epoch = epoch
         self.prefix = ''
         if epoch is not None:
-            self.prefix += 'epoch {:03d}'.format(epoch)
+            self.prefix += '| epoch {:03d}'.format(epoch)
         if prefix is not None:
             self.prefix += ' | {}'.format(prefix)
 
@@ -92,11 +88,11 @@ class progress_bar(object):
     def __iter__(self):
         raise NotImplementedError
 
-    def log(self, stats, tag=None, step=None):
+    def log(self, stats, tag='', step=None):
         """Log intermediate stats according to log_interval."""
         raise NotImplementedError
 
-    def print(self, stats, tag=None, step=None):
+    def print(self, stats, tag='', step=None):
         """Print end-of-epoch stats."""
         raise NotImplementedError
 
@@ -116,15 +112,6 @@ class progress_bar(object):
         return postfix
 
 
-@contextmanager
-def rename_logger(logger, new_name):
-    old_name = logger.name
-    if new_name is not None:
-        logger.name = new_name
-    yield logger
-    logger.name = old_name
-
-
 class json_progress_bar(progress_bar):
     """Log output in JSON format."""
 
@@ -132,40 +119,28 @@ class json_progress_bar(progress_bar):
         super().__init__(iterable, epoch, prefix)
         self.log_interval = log_interval
         self.stats = None
-        self.tag = None
 
     def __iter__(self):
         size = float(len(self.iterable))
         for i, obj in enumerate(self.iterable, start=self.offset):
             yield obj
-            if (
-                self.stats is not None
-                and i > 0
-                and self.log_interval is not None
-                and (i + 1) % self.log_interval == 0
-            ):
-                update = (
-                    self.epoch - 1 + float(i / size)
-                    if self.epoch is not None
-                    else None
-                )
+            if self.stats is not None and i > 0 and \
+                    self.log_interval is not None and i % self.log_interval == 0:
+                update = self.epoch - 1 + float(i / size) if self.epoch is not None else None
                 stats = self._format_stats(self.stats, epoch=self.epoch, update=update)
-                with rename_logger(logger, self.tag):
-                    logger.info(json.dumps(stats))
+                print(json.dumps(stats), flush=True)
 
-    def log(self, stats, tag=None, step=None):
+    def log(self, stats, tag='', step=None):
         """Log intermediate stats according to log_interval."""
         self.stats = stats
-        self.tag = tag
 
-    def print(self, stats, tag=None, step=None):
+    def print(self, stats, tag='', step=None):
         """Print end-of-epoch stats."""
         self.stats = stats
-        if tag is not None:
+        if tag != '':
             self.stats = OrderedDict([(tag + '_' + k, v) for k, v in self.stats.items()])
         stats = self._format_stats(self.stats, epoch=self.epoch)
-        with rename_logger(logger, tag):
-            logger.info(json.dumps(stats))
+        print(json.dumps(stats), flush=True)
 
     def _format_stats(self, stats, epoch=None, update=None):
         postfix = OrderedDict()
@@ -189,11 +164,11 @@ class noop_progress_bar(progress_bar):
         for obj in self.iterable:
             yield obj
 
-    def log(self, stats, tag=None, step=None):
+    def log(self, stats, tag='', step=None):
         """Log intermediate stats according to log_interval."""
         pass
 
-    def print(self, stats, tag=None, step=None):
+    def print(self, stats, tag='', step=None):
         """Print end-of-epoch stats."""
         pass
 
@@ -205,32 +180,25 @@ class simple_progress_bar(progress_bar):
         super().__init__(iterable, epoch, prefix)
         self.log_interval = log_interval
         self.stats = None
-        self.tag = None
 
     def __iter__(self):
         size = len(self.iterable)
         for i, obj in enumerate(self.iterable, start=self.offset):
             yield obj
-            if (
-                self.stats is not None
-                and i > 0
-                and self.log_interval is not None
-                and (i + 1) % self.log_interval == 0
-            ):
+            if self.stats is not None and i > 0 and \
+                    self.log_interval is not None and i % self.log_interval == 0:
                 postfix = self._str_commas(self.stats)
-                with rename_logger(logger, self.tag):
-                    logger.info('{}:  {:5d} / {:d} {}'.format(self.prefix, i, size, postfix))
+                print('{}:  {:5d} / {:d} {}'.format(self.prefix, i, size, postfix),
+                      flush=True)
 
-    def log(self, stats, tag=None, step=None):
+    def log(self, stats, tag='', step=None):
         """Log intermediate stats according to log_interval."""
         self.stats = self._format_stats(stats)
-        self.tag = tag
 
-    def print(self, stats, tag=None, step=None):
+    def print(self, stats, tag='', step=None):
         """Print end-of-epoch stats."""
         postfix = self._str_pipes(self._format_stats(stats))
-        with rename_logger(logger, tag):
-            logger.info('{} | {}'.format(self.prefix, postfix))
+        print('{} | {}'.format(self.prefix, postfix), flush=True)
 
 
 class tqdm_progress_bar(progress_bar):
@@ -244,11 +212,11 @@ class tqdm_progress_bar(progress_bar):
     def __iter__(self):
         return iter(self.tqdm)
 
-    def log(self, stats, tag=None, step=None):
+    def log(self, stats, tag='', step=None):
         """Log intermediate stats according to log_interval."""
         self.tqdm.set_postfix(self._format_stats(stats), refresh=False)
 
-    def print(self, stats, tag=None, step=None):
+    def print(self, stats, tag='', step=None):
         """Print end-of-epoch stats."""
         postfix = self._str_pipes(self._format_stats(stats))
         self.tqdm.write('{} | {}'.format(self.tqdm.desc, postfix))
@@ -267,10 +235,8 @@ class tensorboard_log_wrapper(progress_bar):
             self.SummaryWriter = SummaryWriter
             self._writers = {}
         except ImportError:
-            logger.warning(
-                "tensorboard or required dependencies not found, "
-                "please see README for using tensorboard. (e.g. pip install tensorboardX)"
-            )
+            print("tensorboard or required dependencies not found, "
+                  "please see README for using tensorboard. (e.g. pip install tensorboardX)")
             self.SummaryWriter = None
 
     def _writer(self, key):
@@ -287,12 +253,12 @@ class tensorboard_log_wrapper(progress_bar):
     def __iter__(self):
         return iter(self.wrapped_bar)
 
-    def log(self, stats, tag=None, step=None):
+    def log(self, stats, tag='', step=None):
         """Log intermediate stats to tensorboard."""
         self._log_to_tensorboard(stats, tag, step)
         self.wrapped_bar.log(stats, tag=tag, step=step)
 
-    def print(self, stats, tag=None, step=None):
+    def print(self, stats, tag='', step=None):
         """Print end-of-epoch stats."""
         self._log_to_tensorboard(stats, tag, step)
         self.wrapped_bar.print(stats, tag=tag, step=step)
@@ -302,8 +268,8 @@ class tensorboard_log_wrapper(progress_bar):
             writer.close()
         return False
 
-    def _log_to_tensorboard(self, stats, tag=None, step=None):
-        writer = self._writer(tag or '')
+    def _log_to_tensorboard(self, stats, tag='', step=None):
+        writer = self._writer(tag)
         if writer is None:
             return
         if step is None:

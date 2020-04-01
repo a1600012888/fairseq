@@ -3,20 +3,17 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
-import math
 import sys
+
+import math
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from fairseq.models import (
+from . import (
     BaseFairseqModel, register_model, register_model_architecture
 )
-
-
-logger = logging.getLogger(__name__)
 
 
 @register_model('wav2vec')
@@ -77,7 +74,7 @@ class Wav2VecModel(BaseFairseqModel):
         base_wav2vec_architecture(args)
 
         model = Wav2VecModel(args)
-        logger.info(model)
+        print(model)
         return model
 
     def __init__(self, args):
@@ -190,7 +187,7 @@ class Wav2VecModel(BaseFairseqModel):
         return result
 
     def upgrade_state_dict_named(self, state_dict, name):
-        super().upgrade_state_dict_named(state_dict, name)
+        return state_dict
 
     def max_positions(self):
         """Maximum length supported by the model."""
@@ -200,7 +197,7 @@ class Wav2VecModel(BaseFairseqModel):
         logits = net_output['cpc_logits']
         return logits
 
-    def get_targets(self, sample, net_output):
+    def get_targets(self, sample, net_output, expand_steps=True):
         t = net_output['cpc_targets']
         return t.contiguous()
 
@@ -271,10 +268,9 @@ class ConvFeatureExtractionModel(nn.Module):
 
         in_d = 1
         self.conv_layers = nn.ModuleList()
-        for dim, k, stride in conv_layers:
+        for i, (dim, k, stride) in enumerate(conv_layers):
             self.conv_layers.append(
-                block(in_d, dim, k, stride)
-            )
+                block(in_d, dim, k, stride))
             in_d = dim
 
         self.log_compression = log_compression
@@ -335,7 +331,7 @@ class ConvAggegator(nn.Module):
         in_d = embed
         self.conv_layers = nn.ModuleList()
         self.residual_proj = nn.ModuleList()
-        for dim, k, stride in conv_layers:
+        for i, (dim, k, stride) in enumerate(conv_layers):
             if in_d != dim and skip_connections:
                 self.residual_proj.append(
                     nn.Conv1d(in_d, dim, 1, bias=False),
@@ -344,8 +340,7 @@ class ConvAggegator(nn.Module):
                 self.residual_proj.append(None)
 
             self.conv_layers.append(
-                block(in_d, dim, k, stride)
-            )
+                block(in_d, dim, k, stride))
             in_d = dim
         self.conv_layers = nn.Sequential(*self.conv_layers)
         self.skip_connections = skip_connections

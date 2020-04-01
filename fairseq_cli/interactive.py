@@ -9,24 +9,11 @@ Translate raw text with a trained model. Batches data on-the-fly.
 
 from collections import namedtuple
 import fileinput
-import logging
-import math
-import sys
-import os
 
 import torch
 
 from fairseq import checkpoint_utils, options, tasks, utils
 from fairseq.data import encoders
-
-
-logging.basicConfig(
-    format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    level=logging.INFO,
-    stream=sys.stdout,
-)
-logger = logging.getLogger('fairseq_cli.interactive')
 
 
 Batch = namedtuple('Batch', 'ids src_tokens src_lengths')
@@ -53,13 +40,12 @@ def make_batches(lines, args, task, max_positions, encode_fn):
         ).long()
         for src_str in lines
     ]
-    lengths = [t.numel() for t in tokens]
+    lengths = torch.LongTensor([t.numel() for t in tokens])
     itr = task.get_batch_iterator(
         dataset=task.build_dataset_for_inference(tokens, lengths),
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences,
         max_positions=max_positions,
-        ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test
     ).next_epoch_itr(shuffle=False)
     for batch in itr:
         yield Batch(
@@ -81,7 +67,7 @@ def main(args):
     assert not args.max_sentences or args.max_sentences <= args.buffer_size, \
         '--max-sentences/--batch-size cannot be larger than --buffer-size'
 
-    logger.info(args)
+    print(args)
 
     use_cuda = torch.cuda.is_available() and not args.cpu
 
@@ -89,9 +75,9 @@ def main(args):
     task = tasks.setup_task(args)
 
     # Load ensemble
-    logger.info('loading model(s) from {}'.format(args.path))
+    print('| loading model(s) from {}'.format(args.path))
     models, _model_args = checkpoint_utils.load_model_ensemble(
-        args.path.split(os.pathsep),
+        args.path.split(':'),
         arg_overrides=eval(args.model_overrides),
         task=task,
     )
@@ -142,9 +128,8 @@ def main(args):
     )
 
     if args.buffer_size > 1:
-        logger.info('Sentence buffer size: %s', args.buffer_size)
-    logger.info('NOTE: hypothesis and token scores are output in base 2')
-    logger.info('Type the input sentence and press return:')
+        print('| Sentence buffer size:', args.buffer_size)
+    print('| Type the input sentence and press return:')
     start_id = 0
     for inputs in buffered_read(args.input, args.buffer_size):
         results = []
@@ -183,15 +168,10 @@ def main(args):
                     remove_bpe=args.remove_bpe,
                 )
                 hypo_str = decode_fn(hypo_str)
-                score = hypo['score'] / math.log(2)  # convert to base 2
-                print('H-{}\t{}\t{}'.format(id, score, hypo_str))
+                print('H-{}\t{}\t{}'.format(id, hypo['score'], hypo_str))
                 print('P-{}\t{}'.format(
                     id,
-                    ' '.join(map(
-                        lambda x: '{:.4f}'.format(x),
-                        # convert from base e to base 2
-                        hypo['positional_scores'].div_(math.log(2)).tolist(),
-                    ))
+                    ' '.join(map(lambda x: '{:.4f}'.format(x), hypo['positional_scores'].tolist()))
                 ))
                 if args.print_alignment:
                     alignment_str = " ".join(["{}-{}".format(src, tgt) for src, tgt in alignment])
