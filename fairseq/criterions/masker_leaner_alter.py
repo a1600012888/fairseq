@@ -116,62 +116,66 @@ class MaskLeanerAlterLoss(FairseqCriterion):
 
         # print('masker 1 shape', masker_out.shape)
 
-        if num_mask == 0:
-            num_mask = 1
+        do_explore = torch.rand(1) < self.explore_prob
 
-        if self.do_deterministic:
-            masked_tokens, masked_idxes = torch.topk(masker_out.float(), num_mask, dim=-1)
-        else:
+        if not do_explore:
+            if num_mask == 0:
+                num_mask = 1
+
+            if self.do_deterministic:
+                masked_tokens, masked_idxes = torch.topk(masker_out.float(), num_mask, dim=-1)
+            else:
+                with torch.no_grad():
+                    # t_masker_out = torch.clamp(masker_out * float(num_mask), 0, 1)
+                    # random_s = torch.bernoulli(t_masker_out).type(torch.bool)
+                    # masked_idxes = random_s  # not not index, but table of True of False##
+                    # print ('masker')
+                    masked_idxes = torch.multinomial(masker_out.float(), num_mask, replacement=False)
+
             with torch.no_grad():
-                # t_masker_out = torch.clamp(masker_out * float(num_mask), 0, 1)
-                # random_s = torch.bernoulli(t_masker_out).type(torch.bool)
-                # masked_idxes = random_s  # not not index, but table of True of False##
-                # print ('masker')
-                masked_idxes = torch.multinomial(masker_out.float(), num_mask, replacement=False)
 
-        with torch.no_grad():
+                labels = torch.full_like(inps, self.padding_idx)
 
-            labels = torch.full_like(inps, self.padding_idx)
+                raw_masked_pos = torch.full_like(inps, False).type(torch.bool)
 
-            raw_masked_pos = torch.full_like(inps, False).type(torch.bool)
+                x_idx = torch.arange(end=inps.size(0), device=inps.device).unsqueeze(-1)
+                x_idx = x_idx.expand_as(masked_idxes)
 
-            x_idx = torch.arange(end=inps.size(0), device=inps.device).unsqueeze(-1)
-            x_idx = x_idx.expand_as(masked_idxes)
+                # from IPython import embed
+                # embed()
+                raw_masked_pos[(x_idx, masked_idxes)] = True
 
-            # from IPython import embed
-            # embed()
-            raw_masked_pos[(x_idx, masked_idxes)] = True
+                raw_masked_pos[inps == self.padding_idx] = False
 
-            raw_masked_pos[inps == self.padding_idx] = False
+                labels[(x_idx, masked_idxes)] = inps[(x_idx, masked_idxes)]
 
-            labels[(x_idx, masked_idxes)] = inps[(x_idx, masked_idxes)]
+                new_masked_inps = inps * raw_masked_pos.logical_not() + \
+                                  torch.full_like(inps, self.mask_idx) * raw_masked_pos
 
-            new_masked_inps = inps * raw_masked_pos.logical_not() + \
-                              torch.full_like(inps, self.mask_idx) * raw_masked_pos
+                probs = torch.ones_like(inps, dtype=torch.float)
 
-            probs = torch.ones_like(inps, dtype=torch.float)
+                probs[raw_masked_pos] = torch.rand_like(inps, dtype=torch.float)[raw_masked_pos]
 
-            probs[raw_masked_pos] = torch.rand_like(inps, dtype=torch.float)[raw_masked_pos]
+                non_masked_pos = probs < self.leave_unmasked_prob
 
-            non_masked_pos = probs < self.leave_unmasked_prob
+                new_masked_inps[non_masked_pos] = inps[non_masked_pos]
 
-            new_masked_inps[non_masked_pos] = inps[non_masked_pos]
+                rand_replace_pos = (probs >= self.leave_unmasked_prob) & (probs < self.rand_or_unmask_prob)
 
-            rand_replace_pos = (probs >= self.leave_unmasked_prob) & (probs < self.rand_or_unmask_prob)
+                num_gen = rand_replace_pos.long().sum()
 
-            num_gen = rand_replace_pos.long().sum()
+                if num_gen > 0:
+                    rand_token = torch.multinomial(self.random_weights.float(), num_gen, replacement=True)
 
-            if num_gen > 0:
-                rand_token = torch.multinomial(self.random_weights.float(), num_gen, replacement=True)
+                    rand_token.type(inps.type())
+                    new_masked_inps[rand_replace_pos] = rand_token
 
-                rand_token.type(inps.type())
-                new_masked_inps[rand_replace_pos] = rand_token
+                new_inp = new_masked_inps
 
-            new_inp = new_masked_inps
 
-            if model.training:
-                sample['target'] = labels
-                sample['net_input']["src_tokens"] = new_inp
+                if model.training:
+                    sample['target'] = labels
+                    sample['net_input']["src_tokens"] = new_inp
 
         masked_tokens = sample['target'].ne(self.padding_idx)
         sample_size = masked_tokens.int().sum().item()
