@@ -78,11 +78,12 @@ class ElectraMaskLoss(FairseqCriterion):
         3) logging outputs to display while training
         """
         # compute MLM loss
-        raw_inps = sample["net_input"]["src_tokens"]
-        raw_targets = sample['target']
-        raw_masked_tokens = raw_targets.eq(self.mask_idx)
-        inps = raw_targets * raw_masked_tokens + \
-               raw_inps * (raw_masked_tokens ^ True)
+        # raw_inps = sample["net_input"]["src_tokens"]
+        # raw_targets = sample['target']
+        # raw_masked_tokens = raw_targets.eq(self.mask_idx)
+        # inps = raw_targets * raw_masked_tokens + \
+        #        raw_inps * (raw_masked_tokens ^ True)
+        inps = sample["target"]
         sz = inps.size(-1)  # all batches should be the same length
         num_mask = int(sz * 0.15)
 
@@ -163,7 +164,7 @@ class ElectraMaskLoss(FairseqCriterion):
             new_inp = new_masked_inps
 
             if model.training:
-                sample['target'] = labels
+                #sample['target'] = labels # electra dataset. traget as rwa sentence
                 sample['net_input']["src_tokens"] = new_inp
 
 
@@ -197,14 +198,19 @@ class ElectraMaskLoss(FairseqCriterion):
         )
 
         disc_targets = disc_tokens.eq(sample['target'])[not_pad_tokens].float()
+        disc_targets_mask = disc_tokens.eq(sample['target'])[masked_tokens].float()
 
         disc_loss_ = F.binary_cross_entropy_with_logits(disc_output[not_pad_tokens].float().view(-1),
             disc_targets.view(-1), reduction='none')
 
+        with torch.no_grad():
+            bert_loss = F.binary_cross_entropy_with_logits(disc_output[masked_tokens].float().view(-1),
+            disc_targets_mask.view(-1), reduction='none')
+
         batch_sz, len_token = sample['net_input']["src_tokens"].size()
         masker_out = masker_out[masked_tokens]
 
-        print(disc_loss_.shape, gen_loss_.shape, masker_out.shape)
+        #print(disc_loss_.shape, gen_loss_.shape, masker_out.shape)
 
         if sample_size % batch_sz == 0 and disc_loss_.numel() % batch_sz == 0:
             gen_loss_ = gen_loss_.view(batch_sz, -1)
@@ -300,7 +306,6 @@ class ElectraMaskLoss(FairseqCriterion):
 
         # cal masker loss below!
         #bert_loss = gen_loss_.detach().view(-1)
-        bert_loss = disc_loss_[masked_tokens].view(-1)
 
         with torch.no_grad():
             # put batch mean into logging!
