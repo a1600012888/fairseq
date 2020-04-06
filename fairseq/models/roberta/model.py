@@ -251,6 +251,8 @@ class RobertaMaskLeaner(FairseqLanguageModel):
                             help='dropout probability in the masked_lm pooler layers')
         parser.add_argument('--max-positions', type=int,
                             help='number of positional embeddings to learn')
+        parser.add_argument('--ratio', type=int,
+                            help='the width divder for the masker')
         parser.add_argument('--load-checkpoint-heads', action='store_true',
                             help='(re-)register and load heads when loading checkpoints')
         # args for "Reducing Transformer Depth on Demand with Structured Dropout" (Fan et al., 2019)
@@ -270,7 +272,7 @@ class RobertaMaskLeaner(FairseqLanguageModel):
             args.max_positions = args.tokens_per_sample
 
         encoder = RobertaEncoder(args, task.source_dictionary)
-        masker = MaskerEncoder(args, task.source_dictionary, encoder.sentence_encoder.embed_tokens, ratio=4)
+        masker = MaskerEncoder(args, task.source_dictionary, encoder.sentence_encoder.embed_tokens, ratio=self.args.ratio)
         return cls(args, encoder, masker)
 
     def forward(self, src_tokens, features_only=False, return_all_hiddens=False, classification_head_name=None, **kwargs):
