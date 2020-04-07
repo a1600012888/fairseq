@@ -159,6 +159,9 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
             num_gen = rand_replace_pos.long().sum()
 
+            real_mask_pos = raw_masked_pos & (non_masked_pos.logical_not()) & (rand_replace_pos.logical_not())
+            real_from_raw = real_mask_pos[raw_masked_pos]
+
             if num_gen > 0:
                 rand_token = torch.multinomial(self.random_weights.float(), num_gen, replacement=True)
 
@@ -199,6 +202,7 @@ class MaskLeanerCoLoss(FairseqCriterion):
         )
 
         loss, weight_mean = None, None
+        raw_masker_out = masker_out
         masker_out = masker_out[masked_tokens]
         if sample_size % batch_sz == 0:
             loss_ = loss_.view(batch_sz, -1)
@@ -266,7 +270,9 @@ class MaskLeanerCoLoss(FairseqCriterion):
         #import IPython
         #IPython.embed()
         #print(pred_softmax.shape, targets.shape)
-        bert_loss = loss_.detach().view(-1)
+        #print(real_from_raw.shape, loss_.shape, masker_out.shape)
+        bert_loss = loss_.detach().view(-1)[real_from_raw]
+        masker_out = masker_out[real_from_raw]
 
         with torch.no_grad():
             # put batch mean into logging!

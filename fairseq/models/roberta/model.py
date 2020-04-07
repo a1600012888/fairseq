@@ -251,7 +251,7 @@ class RobertaMaskLeaner(FairseqLanguageModel):
                             help='dropout probability in the masked_lm pooler layers')
         parser.add_argument('--max-positions', type=int,
                             help='number of positional embeddings to learn')
-        parser.add_argument('--ratio', type=int,
+        parser.add_argument('--ratio', type=int, default=3, 
                             help='the width divder for the masker')
         parser.add_argument('--load-checkpoint-heads', action='store_true',
                             help='(re-)register and load heads when loading checkpoints')
