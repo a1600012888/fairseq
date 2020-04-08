@@ -160,8 +160,8 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
             num_gen = rand_replace_pos.long().sum()
 
-            real_mask_pos = raw_masked_pos & (non_masked_pos.logical_not()) & (rand_replace_pos.logical_not())
-            real_from_raw = real_mask_pos[raw_masked_pos]
+            #real_mask_pos = raw_masked_pos & (non_masked_pos.logical_not()) & (rand_replace_pos.logical_not())
+            #real_from_raw = real_mask_pos[raw_masked_pos]
 
             if num_gen > 0:
                 rand_token = torch.multinomial(self.random_weights.float(), num_gen, replacement=True)
@@ -177,6 +177,10 @@ class MaskLeanerCoLoss(FairseqCriterion):
                 
         masked_tokens = sample['target'].ne(self.padding_idx)
         sample_size = masked_tokens.int().sum().item()
+
+        raw_masked_pos = sample['target'].ne(self.padding_idx)
+        real_mask_pos = sample['net_input']["src_tokens"].eq(self.mask_idx)
+        real_from_raw = real_mask_pos[raw_masked_pos]
 
         # (Rare case) When all tokens are masked, the model results in empty
         # tensor and gives CUDA error.
