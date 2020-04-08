@@ -142,7 +142,8 @@ class MaskLeanerCoLoss(FairseqCriterion):
 
             raw_masked_pos[inps == self.padding_idx] = False
 
-            labels[(x_idx, masked_idxes)] = inps[(x_idx, masked_idxes)]
+            #labels[(x_idx, masked_idxes)] = inps[(x_idx, masked_idxes)]
+            labels[raw_masked_pos] = inps[raw_masked_pos]
 
             new_masked_inps = inps * raw_masked_pos.logical_not() + \
                               torch.full_like(inps, self.mask_idx) * raw_masked_pos

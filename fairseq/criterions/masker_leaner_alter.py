@@ -147,7 +147,8 @@ class MaskLeanerAlterLoss(FairseqCriterion):
 
                 raw_masked_pos[inps == self.padding_idx] = False
 
-                labels[(x_idx, masked_idxes)] = inps[(x_idx, masked_idxes)]
+                # labels[(x_idx, masked_idxes)] = inps[(x_idx, masked_idxes)]
+                labels[raw_masked_pos] = inps[raw_masked_pos]
 
                 new_masked_inps = inps * raw_masked_pos.logical_not() + \
                                   torch.full_like(inps, self.mask_idx) * raw_masked_pos
@@ -164,6 +165,9 @@ class MaskLeanerAlterLoss(FairseqCriterion):
 
                 num_gen = rand_replace_pos.long().sum()
 
+                real_mask_pos = raw_masked_pos & (non_masked_pos.logical_not()) & (rand_replace_pos.logical_not())
+                real_from_raw = real_mask_pos[raw_masked_pos]
+
                 if num_gen > 0:
                     rand_token = torch.multinomial(self.random_weights.float(), num_gen, replacement=True)
 
@@ -173,9 +177,13 @@ class MaskLeanerAlterLoss(FairseqCriterion):
                 new_inp = new_masked_inps
 
 
-                if model.training:
+                if model.training and (not do_explore):
                     sample['target'] = labels
                     sample['net_input']["src_tokens"] = new_inp
+
+        raw_masked_pos = sample['target'].ne(self.padding_idx)
+        real_mask_pos = sample['net_input']["src_tokens"].eq(self.mask_idx)
+        real_from_raw = real_mask_pos[raw_masked_pos]
 
         masked_tokens = sample['target'].ne(self.padding_idx)
         sample_size = masked_tokens.int().sum().item()
@@ -276,7 +284,9 @@ class MaskLeanerAlterLoss(FairseqCriterion):
         # import IPython
         # IPython.embed()
         # print(pred_softmax.shape, targets.shape)
-        bert_loss = loss_.detach().view(-1)
+
+        bert_loss = loss_.detach().view(-1)[real_from_raw]
+        masker_out = masker_out[real_from_raw]
 
         with torch.no_grad():
             # put batch mean into logging!
