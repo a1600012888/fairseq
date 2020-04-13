@@ -421,7 +421,7 @@ class RobertaMaskLeanerHead(nn.Module):
         x = x * self.scaling
         x = F.softmax(x, dim=-1)
 
-        x = x + 1e-5
+        x = x + 1e-4
         return x
 
 
