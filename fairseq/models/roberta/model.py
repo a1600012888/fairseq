@@ -410,13 +410,18 @@ class RobertaMaskLeanerHead(nn.Module):
     def __init__(self, embed_dim):
         super().__init__()
         self.dense = nn.Linear(embed_dim, 1)
+        self.scaling = embed_dim ** (-0.5)
 
     def forward(self, features, **kwargs):
 
         x = self.dense(features)
         #x = F.sigmoid(x)
         x = x.view(x.size(0), -1)
+
+        x = x * self.scaling
         x = F.softmax(x, dim=-1)
+
+        x = x + 1e-5
         return x
 
 
