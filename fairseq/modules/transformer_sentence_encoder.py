@@ -95,7 +95,7 @@ class TransformerSentenceEncoder(nn.Module):
         freeze_embeddings: bool = False,
         n_trans_layers_to_freeze: int = 0,
         export: bool = False,
-        share_embed_tokens: object = None,
+        share_embed_tokens: dict = None,
         shared_embedding_dim: int = 768,
     ) -> None:
 
@@ -112,33 +112,44 @@ class TransformerSentenceEncoder(nn.Module):
         self.learned_pos_embedding = learned_pos_embedding
         self.shared_embedding_dim = shared_embedding_dim
 
-        if share_embed_tokens is None:
+        self.embed_scale = embed_scale
+
+        if share_embed_tokens is not None:
+
+            self.share_embed = True
+            self.embed_tokens = share_embed_tokens['embed_tokens']
+            self.embed_linear = nn.Linear(self.shared_embedding_dim, self.embedding_dim)
+            self.segment_embeddings = share_embed_tokens['segment_embeddings']
+            self.embed_positions = share_embed_tokens['embed_positions']
+            self.emb_layer_norm = share_embed_tokens['emb_layer_norm']
+        else:
+
             self.share_embed = False
             self.embed_tokens = nn.Embedding(
                 self.vocab_size, self.embedding_dim, self.padding_idx
             )
-        else:
-            self.share_embed = True
-            self.embed_tokens = share_embed_tokens
-            self.embed_linear = nn.Linear(self.shared_embedding_dim, self.embedding_dim)
-        self.embed_scale = embed_scale
 
-        self.segment_embeddings = (
-            nn.Embedding(self.num_segments, self.embedding_dim, padding_idx=None)
-            if self.num_segments > 0
-            else None
-        )
-
-        self.embed_positions = (
-            PositionalEmbedding(
-                self.max_seq_len,
-                self.embedding_dim,
-                padding_idx=(self.padding_idx if offset_positions_by_padding else None),
-                learned=self.learned_pos_embedding,
+            self.segment_embeddings = (
+                nn.Embedding(self.num_segments, self.embedding_dim, padding_idx=None)
+                if self.num_segments > 0
+                else None
             )
-            if self.use_position_embeddings
-            else None
-        )
+
+            self.embed_positions = (
+                PositionalEmbedding(
+                    self.max_seq_len,
+                    self.embedding_dim,
+                    padding_idx=(self.padding_idx if offset_positions_by_padding else None),
+                    learned=self.learned_pos_embedding,
+                )
+                if self.use_position_embeddings
+                else None
+            )
+
+            if encoder_normalize_before:
+                self.emb_layer_norm = LayerNorm(self.embedding_dim, export=export)
+            else:
+                self.emb_layer_norm = None
 
         self.layers = nn.ModuleList(
             [
@@ -158,11 +169,6 @@ class TransformerSentenceEncoder(nn.Module):
                 for _ in range(num_encoder_layers)
             ]
         )
-
-        if encoder_normalize_before:
-            self.emb_layer_norm = LayerNorm(self.embedding_dim, export=export)
-        else:
-            self.emb_layer_norm = None
 
         # Apply initialization of model params after building the model
         if self.apply_bert_init:
@@ -198,8 +204,8 @@ class TransformerSentenceEncoder(nn.Module):
         if self.share_embed:
             # if the embedding is shared, keep equal-size in the model
             x = self.embed_tokens(tokens)
-            x = self.embed_linear(x)
-        else:    
+            #x = self.embed_linear(x)
+        else:
             x = self.embed_tokens(tokens)
 
         if self.embed_scale is not None:
@@ -215,6 +221,9 @@ class TransformerSentenceEncoder(nn.Module):
             x = self.emb_layer_norm(x)
 
         x = F.dropout(x, p=self.dropout, training=self.training)
+
+        if self.share_embed:
+            x = self.embed_linear(x)
 
         # account for padding while computing the representation
         if padding_mask is not None:

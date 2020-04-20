@@ -272,7 +272,13 @@ class RobertaMaskLeaner(FairseqLanguageModel):
             args.max_positions = args.tokens_per_sample
 
         encoder = RobertaEncoder(args, task.source_dictionary)
-        masker = MaskerEncoder(args, task.source_dictionary, encoder.sentence_encoder.embed_tokens, ratio=args.ratio)
+        embed_dict = {
+            'embed_tokens':encoder.sentence_encoder.embed_tokens,
+            'segment_embeddings': encoder.sentence_encoder.segment_embeddings,
+            'embed_positions':encoder.sentence_encoder.embed_positions,
+            'emb_layer_norm':encoder.sentence_encoder.emb_layer_norm,
+        }
+        masker = MaskerEncoder(args, task.source_dictionary, embed_dict, ratio=args.ratio)
         return cls(args, encoder, masker)
 
     def forward(self, src_tokens, features_only=False, return_all_hiddens=False, classification_head_name=None, **kwargs):

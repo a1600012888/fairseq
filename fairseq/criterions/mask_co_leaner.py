@@ -140,6 +140,8 @@ class MaskLeanerCoLoss(FairseqCriterion):
             #embed()
             raw_masked_pos[(x_idx, masked_idxes)] = True
 
+            #raw_masked_pos.scatter_(-1, masked_idxes, True)
+
             raw_masked_pos[inps == self.padding_idx] = False
 
             #labels[(x_idx, masked_idxes)] = inps[(x_idx, masked_idxes)]
